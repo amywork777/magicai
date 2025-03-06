@@ -16,6 +16,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  transpilePackages: ['three', '@react-three/fiber', '@react-three/drei', 'expo', 'expo-asset', 'expo-gl', 'expo-file-system', 'react-native'],
   experimental: {
     webpackBuildWorker: true,
     parallelServerBuildTraces: true,
