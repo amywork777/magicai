@@ -3,13 +3,18 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 
-const inter = Inter({ subsets: ["latin"] })
+// Initialize Inter font with latin subset
+const inter = Inter({ 
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap"
+})
 
 export const metadata: Metadata = {
-  title: "MagicFish AI",
+  title: "3D Model Generator",
   description:
     "Create detailed 3D models from images or text descriptions. Perfect for characters, creatures, and organic shapes.",
-    generator: 'v0.dev'
+  generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -18,8 +23,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html lang="en" className={`${inter.variable}`}>
+      <body className={`${inter.className} bg-white`}>{children}</body>
     </html>
   )
 }
