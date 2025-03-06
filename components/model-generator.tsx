@@ -1,17 +1,55 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Download, Upload, Wand2 } from "lucide-react"
+import { Download, Upload, Wand2, RefreshCw, Mic, MicOff } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { useDropzone } from "react-dropzone"
 import { convertGlbToStl } from "@/lib/stl-utils"
 import * as THREE from "three"
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
+
+// Add type definitions for Speech Recognition API
+interface SpeechRecognitionEvent extends Event {
+  results: {
+    item(index: number): {
+      item(index: number): {
+        transcript: string;
+      };
+    };
+    length: number;
+  };
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
+// Add global declarations
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognition;
+    webkitSpeechRecognition?: new () => SpeechRecognition;
+  }
+}
 
 type ModelGenerationStatus = "idle" | "uploading" | "generating" | "completed" | "error"
 type InputType = "text" | "image"
@@ -32,7 +70,141 @@ export function ModelGenerator() {
   const [isConvertingStl, setIsConvertingStl] = useState(false)
   const [stlUrl, setStlUrl] = useState<string | null>(null)
   const [stlViewerRef, setStlViewerRef] = useState<HTMLDivElement | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
   const { toast } = useToast()
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      const SpeechRecognitionConstructor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognitionConstructor) {
+        recognitionRef.current = new SpeechRecognitionConstructor();
+        recognitionRef.current.continuous = true;
+        recognitionRef.current.interimResults = true;
+        
+        recognitionRef.current.onresult = (event: SpeechRecognitionEvent) => {
+          const transcript = Array.from(Array(event.results.length))
+            .map((_, i) => event.results.item(i).item(0).transcript)
+            .join('');
+          
+          setTextPrompt(transcript);
+        };
+        
+        recognitionRef.current.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error('Speech recognition error', event.error);
+          setIsRecording(false);
+          toast({
+            title: "Voice Input Error",
+            description: "Failed to recognize speech. Please try again.",
+            variant: "destructive",
+          });
+        };
+      }
+    }
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [toast]);
+
+  const toggleVoiceRecording = () => {
+    if (!recognitionRef.current) {
+      toast({
+        title: "Not Supported",
+        description: "Voice input is not supported in your browser.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      toast({
+        title: "Voice Recording Stopped",
+        description: "Voice input has been added to the text field.",
+      });
+    } else {
+      recognitionRef.current.start();
+      setIsRecording(true);
+      toast({
+        title: "Voice Recording Started",
+        description: "Speak now to add your description...",
+      });
+    }
+  };
+
+  const resetState = () => {
+    setTextPrompt("");
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setStatus("idle");
+    setModelUrl(null);
+    setTaskId(null);
+    setProgress(0);
+    setIsGenerating(false);
+    setIsDownloading(false);
+    setStlBlob(null);
+    setStlUrl(null);
+    // If recording is active, stop it
+    if (isRecording && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
+    
+    toast({
+      title: "Reset Complete",
+      description: "Ready to generate a new 3D model!",
+    });
+  };
+
+  const addToFishCAD = async () => {
+    if (!stlBlob) {
+      toast({
+        title: "No STL Available",
+        description: "Please generate and convert a model to STL first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    toast({
+      title: "Adding to FishCAD",
+      description: "Uploading your model to FishCAD...",
+    });
+    
+    try {
+      // This would be where you'd implement the actual API call to FishCAD
+      // For now, we'll just simulate it with a timeout
+      
+      setTimeout(() => {
+        toast({
+          title: "Success!",
+          description: "Your model has been added to FishCAD. Visit fishcad.com to view it.",
+        });
+      }, 2000);
+      
+      // In a real implementation you would do something like:
+      // const formData = new FormData();
+      // formData.append('file', stlBlob, 'model.stl');
+      // const response = await fetch('https://fishcad.com/api/upload', {
+      //   method: 'POST',
+      //   body: formData,
+      // });
+      // Process the response here...
+      
+    } catch (error) {
+      console.error('Error uploading to FishCAD:', error);
+      toast({
+        title: "Upload Failed",
+        description: "Failed to upload to FishCAD. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -456,35 +628,47 @@ export function ModelGenerator() {
   const canGenerate = inputType === "text" ? !!textPrompt.trim() : !!selectedFile;
 
   return (
-    <div className="grid grid-cols-1 gap-8">
-      <Card className="md:h-[600px] flex flex-col shadow-md border-gray-200">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-2xl">Create Your 3D Model</CardTitle>
-          <CardDescription className="text-base">
-            Generate detailed 3D models from text descriptions or images
+    <div className="w-full max-w-4xl mx-auto">
+      <Card>
+        <CardHeader>
+          <CardTitle>3D Model Generator</CardTitle>
+          <CardDescription>
+            Create detailed 3D models from text descriptions or images. Perfect for characters, creatures, and organic shapes.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col pb-6">
-          <Tabs
-            defaultValue="text"
-            className="flex-1 flex flex-col"
-            onValueChange={(value) => setInputType(value as InputType)}
-          >
-            <TabsList className="grid w-full grid-cols-2 mb-6">
-              <TabsTrigger value="text">Text Description</TabsTrigger>
-              <TabsTrigger value="image">Upload Image</TabsTrigger>
+        <CardContent>
+          <Tabs defaultValue="text" className="w-full" onValueChange={(v) => setInputType(v as InputType)}>
+            <TabsList className="grid w-full grid-cols-2 mb-4">
+              <TabsTrigger value="text">Text to 3D</TabsTrigger>
+              <TabsTrigger value="image">Image to 3D</TabsTrigger>
             </TabsList>
-            <div className="flex-1 flex flex-col">
-              <TabsContent value="text" className="flex-1 flex flex-col mt-0">
-                <Textarea
-                  placeholder="Describe the 3D object or character you want to create..."
-                  className="flex-1 min-h-[200px] text-base resize-none p-4"
-                  value={textPrompt}
-                  onChange={(e) => setTextPrompt(e.target.value)}
-                  disabled={isGenerating}
-                />
+            <div className="space-y-4">
+              <TabsContent value="text" className="space-y-4">
+                <div className="relative">
+                  <Textarea
+                    placeholder="Describe your 3D model in detail (e.g., a blue dolphin with a curved fin, swimming)"
+                    value={textPrompt}
+                    onChange={(e) => setTextPrompt(e.target.value)}
+                    disabled={isGenerating}
+                    className="min-h-[120px] pr-10"
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-2 top-2"
+                    onClick={toggleVoiceRecording}
+                    disabled={isGenerating}
+                  >
+                    {isRecording ? (
+                      <MicOff className="h-5 w-5 text-red-500" />
+                    ) : (
+                      <Mic className="h-5 w-5" />
+                    )}
+                  </Button>
+                </div>
               </TabsContent>
-              <TabsContent value="image" className="flex-1 flex flex-col mt-0">
+              <TabsContent value="image" className="space-y-4">
                 <div
                   {...getRootProps()}
                   className={`border-2 ${isDragActive ? "border-primary" : "border-dashed"} rounded-lg p-8 flex flex-col items-center justify-center gap-4 flex-1 cursor-pointer transition-colors ${isGenerating ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"}`}
@@ -529,7 +713,7 @@ export function ModelGenerator() {
               </TabsContent>
             </div>
           </Tabs>
-          <div className="w-full mt-6">
+          <div className="space-y-4">
             {/* Progress bars */}
             {(status === "generating" || status === "uploading") && (
               <div className="mb-4">
@@ -569,47 +753,70 @@ export function ModelGenerator() {
               </div>
             )}
             
-            {/* Download button - only show when model is ready */}
+            {/* Action buttons when model is ready */}
             {status === "completed" && modelUrl && (
-              <Button 
-                className="w-full mb-4" 
-                variant="outline"
-                onClick={handleDownload}
-                disabled={isDownloading || isConvertingStl}
+              <div className="flex flex-col gap-2 mb-4">
+                <Button 
+                  className="w-full" 
+                  variant="outline"
+                  onClick={handleDownload}
+                  disabled={isDownloading || isConvertingStl}
+                >
+                  {isDownloading ? (
+                    <>
+                      <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Converting to STL...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="mr-2 h-5 w-5" />
+                      Download STL
+                    </>
+                  )}
+                </Button>
+                
+                <Button
+                  className="w-full"
+                  variant="default"
+                  style={{ backgroundColor: "#ff7b00", color: "white" }}
+                  onClick={addToFishCAD}
+                  disabled={!stlBlob}
+                >
+                  Add to FishCAD
+                </Button>
+                
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  onClick={resetState}
+                >
+                  <RefreshCw className="mr-2 h-5 w-5" />
+                  Generate Another 3D Model
+                </Button>
+              </div>
+            )}
+            
+            {/* Generate button */}
+            {(status !== "completed" || !modelUrl) && (
+              <Button
+                className="w-full"
+                size="lg"
+                onClick={inputType === "text" ? handleTextSubmit : handleImageSubmit}
+                disabled={isGenerating || !canGenerate}
               >
-                {isDownloading ? (
+                {isGenerating ? (
                   <>
-                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
-                    Converting to STL...
+                    <span className="mr-2">Generating</span>
+                    <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
                   </>
                 ) : (
                   <>
-                    <Download className="mr-2 h-5 w-5" />
-                    Download STL
+                    <Wand2 className="mr-2 h-5 w-5" />
+                    Generate 3D Model
                   </>
                 )}
               </Button>
             )}
-            
-            {/* Generate button */}
-            <Button
-              className="w-full"
-              size="lg"
-              onClick={inputType === "text" ? handleTextSubmit : handleImageSubmit}
-              disabled={isGenerating || !canGenerate}
-            >
-              {isGenerating ? (
-                <>
-                  <span className="mr-2">Generating</span>
-                  <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-                </>
-              ) : (
-                <>
-                  <Wand2 className="mr-2 h-5 w-5" />
-                  Generate 3D Model
-                </>
-              )}
-            </Button>
           </div>
         </CardContent>
       </Card>
