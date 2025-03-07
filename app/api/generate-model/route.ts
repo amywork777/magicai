@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
     
     console.log(`🔍 [generate-model] Original prompt length: ${prompt?.length || 0}`);
     console.log(`🔍 [generate-model] Processed prompt length: ${processedPrompt?.length || 0}`);
+    console.log(`🔍 [generate-model] Processed prompt: "${processedPrompt}"`);
     
     if (processedPrompt !== prompt) {
       console.log(`🔍 [generate-model] Prompt was processed/cleaned`);
@@ -42,7 +43,9 @@ export async function POST(request: NextRequest) {
     
     let requestBody
 
-    if (type === "text") {
+    // Prioritize text-to-model generation when possible
+    // Only use image-to-model if explicitly requested AND no valid text prompt is available
+    if (type === "text" || (processedPrompt && processedPrompt.length > 10)) {
       // Text to model - without textures
       requestBody = {
         type: "text_to_model",
@@ -52,9 +55,9 @@ export async function POST(request: NextRequest) {
         pbr: false, // Disable PBR
         auto_size: true, // Enable auto-sizing for better proportions
       }
-      console.log(`🔍 [generate-model] Using text-to-model generation strategy`);
-    } else if (type === "image") {
-      // Image to model - without textures
+      console.log(`🔍 [generate-model] Using text-to-model generation strategy with prompt: "${processedPrompt}"`);
+    } else if (type === "image" && imageToken) {
+      // Image to model - without textures - only if explicitly requested and no good text prompt
       requestBody = {
         type: "image_to_model",
         model_version: "v2.5-20250123",
@@ -68,8 +71,8 @@ export async function POST(request: NextRequest) {
       }
       console.log(`🔍 [generate-model] Using image-to-model generation strategy with token: ${imageToken}`);
     } else {
-      console.error(`❌ [generate-model] Invalid generation type: ${type}`);
-      return NextResponse.json({ error: "Invalid generation type" }, { status: 400 })
+      console.error(`❌ [generate-model] Invalid generation type or missing required parameters: type=${type}, promptLength=${processedPrompt?.length || 0}, imageToken=${imageToken ? "exists" : "missing"}`);
+      return NextResponse.json({ error: "Invalid generation type or missing required parameters" }, { status: 400 })
     }
 
     console.log(`🔍 [generate-model] Sending request to Tripo API:`, requestBody);

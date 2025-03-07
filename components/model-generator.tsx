@@ -520,8 +520,11 @@ export function ModelGenerator() {
       // Then start the model generation
       setStatus("generating");
       
-      // Determine whether to use image-to-model or text-to-model based on what was successful
-      const generationType = uploadData.imageToken ? "image" : "text";
+      // FIXED: Always prioritize text-to-model with the OpenAI description
+      // Only fall back to image-to-model if explicitly specified
+      const generationType = "text"; // Always use text-to-model for better results
+      
+      console.log("🔄 Using text-to-model with OpenAI description:", description);
       
       const generationPayload: {
         type: string;
@@ -532,9 +535,11 @@ export function ModelGenerator() {
         prompt: description,
       };
       
-      if (generationType === "image") {
-        generationPayload.imageToken = uploadData.imageToken;
-      }
+      // Store the imageToken as backup but don't use it in this flow
+      // We're prioritizing the text description from OpenAI
+      // if (generationType === "image") {
+      //   generationPayload.imageToken = uploadData.imageToken;
+      // }
       
       const generationResponse = await fetch("/api/generate-model", {
         method: "POST",
