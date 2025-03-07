@@ -175,251 +175,6 @@ export function ModelGenerator() {
     });
   };
 
-  const addToFishCAD = async () => {
-    if (!stlBlob) {
-      toast({
-        title: "No STL Available",
-        description: "Please generate and convert a model to STL first.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    toast({
-      title: "Adding to FishCAD",
-      description: "Preparing your model for FishCAD...",
-    });
-    
-    try {
-      // Determine the prompt based on input type
-      const prompt = inputType === "text" 
-        ? textPrompt 
-        : inputType === "image-text" 
-          ? imageTextPrompt 
-          : "Image-based 3D model";
-      
-      // Get metadata for the model
-      const metadata = {
-        title: prompt || "Generated 3D Model",
-        source: window.location.href,
-        tags: ["magicfish-ai", "generated", "3d-model"],
-        description: `3D model ${inputType.includes("image") ? "generated from an image" : "created from text prompt"}: "${prompt}"`,
-        generationMethod: inputType.includes("image") ? "image-to-3d" : "text-to-3d",
-        generatedAt: new Date().toISOString(),
-        fileSize: stlBlob.size
-      };
-      
-      // Check the size of the STL blob
-      console.log(`STL blob size: ${stlBlob.size} bytes`);
-      
-      // Generate a unique request ID
-      const requestId = `stl-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-      const fileName = "magicfish-generated-model.stl";
-      
-      // Check if we're in an iframe and can access parent
-      const inIframe = window !== window.parent;
-      
-      if (inIframe) {
-        // Try parent communication first (proxy approach)
-        console.log("Using parent window proxy approach to send to FISHCAD");
-        
-        // First attempt to tell FISHCAD about the STL
-        window.parent.postMessage({
-          type: "stl-proxy-request",
-          requestId,
-          fileName,
-          metadata,
-          // For the model generator, we can include a short-lived URL for the STL blob
-          // This will be more reliable than sending the whole model in a postMessage
-          stlUrl: URL.createObjectURL(stlBlob)
-        }, "*"); // In production, replace "*" with "https://fishcad.com"
-        
-        // Set up a listener for responses from FISHCAD
-        const responseHandler = (event: MessageEvent) => {
-          console.log("Received message:", event.data);
-          
-          // Check if this is a response for our request
-          if (event.data && 
-              event.data.type === 'stl-proxy-response' && 
-              event.data.requestId === requestId) {
-            
-            console.log("FISHCAD proxy response received:", event.data);
-            
-            // Update UI based on status
-            updateImportUI(event.data.status, event.data);
-            
-            // If completed or failed, remove the listener
-            if (['completed', 'failed'].includes(event.data.status)) {
-              window.removeEventListener('message', responseHandler);
-            }
-          }
-        };
-        
-        // Add the response listener
-        window.addEventListener('message', responseHandler);
-        
-        // Fall back to file upload + server approach after 5 seconds if no response
-        const fallbackTimeout = setTimeout(() => {
-          console.log("No response from FISHCAD proxy, falling back to server API");
-          window.removeEventListener('message', responseHandler);
-          sendToServerAPI(stlBlob, fileName, metadata);
-        }, 5000);
-        
-        // Function to handle status updates
-        const updateImportUI = (status: string, data: Record<string, any>) => {
-          console.log(`Import status: ${status}`);
-          
-          switch (status) {
-            case 'requesting':
-              toast({
-                title: "Requesting Import",
-                description: "Initiating import to FISHCAD...",
-              });
-              break;
-              
-            case 'importing':
-              toast({
-                title: "Importing Model",
-                description: "FISHCAD is downloading your model...",
-              });
-              break;
-              
-            case 'processing':
-              toast({
-                title: "Processing Model",
-                description: "FISHCAD is processing your model...",
-              });
-              break;
-              
-            case 'completed':
-              clearTimeout(fallbackTimeout);
-              toast({
-                title: "Import Successful!",
-                description: "Your model has been added to FISHCAD.",
-              });
-              
-              // If model URL is provided, offer to open it
-              if (data.modelUrl) {
-                setTimeout(() => {
-                  if (confirm("Your model has been imported to FISHCAD. Would you like to view it now?")) {
-                    window.open(data.modelUrl, '_blank');
-                  }
-                }, 1000);
-              }
-              break;
-              
-            case 'failed':
-              clearTimeout(fallbackTimeout);
-              toast({
-                title: "Import Failed",
-                description: data.error || "Failed to import to FISHCAD.",
-                variant: "destructive",
-              });
-              break;
-              
-            default:
-              console.warn(`Unknown import status: ${status}`);
-          }
-        };
-      } else {
-        // Direct server API approach
-        sendToServerAPI(stlBlob, fileName, metadata);
-      }
-    } catch (error) {
-      console.error('Error sending to FishCAD:', error);
-      toast({
-        title: "Send Failed",
-        description: "Failed to send to FishCAD. Please try again or download and import manually.",
-        variant: "destructive",
-      });
-    }
-  };
-  
-  // Function to send STL directly to FISHCAD server API
-  const sendToServerAPI = async (stlBlob: Blob, fileName: string, metadata: Record<string, any>) => {
-    try {
-      toast({
-        title: "Uploading to FISHCAD",
-        description: "Sending your model to FISHCAD server...",
-      });
-      
-      // Create a FormData object to send the STL file
-      const formData = new FormData();
-      formData.append('file', stlBlob, fileName);
-      formData.append('metadata', JSON.stringify(metadata));
-      
-      // Send the file to FISHCAD's API
-      const response = await fetch('https://fishcad.com/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        toast({
-          title: "Upload Successful!",
-          description: "Your model has been added to FISHCAD.",
-        });
-        
-        // If model URL is provided, offer to open it
-        if (data.modelUrl) {
-          setTimeout(() => {
-            if (confirm("Your model has been imported to FISHCAD. Would you like to view it now?")) {
-              window.open(data.modelUrl, '_blank');
-            }
-          }, 1000);
-        }
-      } else {
-        throw new Error(data.message || 'Unknown error');
-      }
-    } catch (error) {
-      console.error('Error uploading to FISHCAD server:', error);
-      
-      // If server upload fails, fall back to download + redirect approach
-      toast({
-        title: "Direct Upload Failed",
-        description: "Falling back to download method...",
-        variant: "destructive",
-      });
-      
-      // Fall back to download + redirect approach
-      downloadAndRedirect(stlBlob, fileName);
-    }
-  };
-  
-  // Function to handle download and redirect as last resort
-  const downloadAndRedirect = (stlBlob: Blob, fileName: string) => {
-    // Create a URL for the STL blob
-    const stlUrl = URL.createObjectURL(stlBlob);
-    
-    // Notify user about the fallback approach
-    toast({
-      title: "Using Alternative Method",
-      description: "Downloading model for manual upload to FISHCAD.",
-      duration: 5000,
-    });
-    
-    // Download the STL file
-    const a = document.createElement("a");
-    a.href = stlUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    
-    // Ask if they want to open FISHCAD
-    setTimeout(() => {
-      if (confirm("Would you like to open FISHCAD in a new tab to upload your model?")) {
-        window.open("https://fishcad.com/upload?source=magicfish", "_blank");
-      }
-    }, 1000);
-  };
-
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
     if (file) {
@@ -1028,59 +783,46 @@ export function ModelGenerator() {
   }
 
   const handleDownload = async () => {
-    if (!modelUrl) return
-    
-    try {
-      // If STL blob already exists, use it directly
-      if (stlBlob) {
-        const a = document.createElement("a")
-        a.href = stlUrl || URL.createObjectURL(stlBlob)
-        a.download = "model.stl"
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        
-        toast({
-          title: "Download complete",
-          description: "Your STL file has been downloaded.",
-        })
-        return
-      }
-      
-      // Otherwise start a new conversion
-      setIsDownloading(true)
+    if (!stlBlob) {
       toast({
-        title: "Processing",
-        description: "Converting model to STL format...",
-      })
-
-      // Convert GLB to STL
-      const blob = await convertToStl(modelUrl)
-      if (!blob) return
-
-      // Download the STL file
-      const a = document.createElement("a")
-      a.href = stlUrl || URL.createObjectURL(blob)
-      a.download = "model.stl"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-
-      toast({
-        title: "Download complete",
-        description: "Your STL file has been downloaded.",
-      })
-    } catch (error) {
-      console.error("Error converting and downloading model:", error)
-      toast({
-        title: "Error",
-        description: "Failed to convert model to STL. Please try again.",
+        title: "No STL Available",
+        description: "Please generate and convert a model to STL first.",
         variant: "destructive",
-      })
-    } finally {
-      setIsDownloading(false)
+      });
+      return;
     }
-  }
+
+    setIsDownloading(true);
+    try {
+      // Create a URL for the STL blob
+      const stlUrl = URL.createObjectURL(stlBlob);
+      
+      // Create and click a download link
+      const link = document.createElement('a');
+      link.href = stlUrl;
+      link.download = "magicfish-generated-model.stl";
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      URL.revokeObjectURL(stlUrl);
+      
+      toast({
+        title: "Download Started",
+        description: "Your STL file is being downloaded.",
+      });
+    } catch (error) {
+      console.error('Download error:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download the STL file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   // Update the STL viewer when the STL URL changes
   useEffect(() => {
@@ -1512,7 +1254,7 @@ export function ModelGenerator() {
                     {isDownloading ? (
                       <>
                         <div className="h-3 w-3 sm:h-4 sm:w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
-                        <span className="text-xs sm:text-sm">Converting to STL...</span>
+                        <span className="text-xs sm:text-sm">Downloading...</span>
                       </>
                     ) : (
                       <>
@@ -1522,31 +1264,14 @@ export function ModelGenerator() {
                     )}
                   </Button>
                   
-                  <Button
-                    className="w-full flex items-center justify-center"
-                    variant="default"
-                    style={{ backgroundColor: "#ff7b00", color: "white" }}
-                    onClick={addToFishCAD}
-                    disabled={!stlBlob || isConvertingStl}
-                    size="sm"
-                  >
-                    {isConvertingStl ? (
-                      <>
-                        <div className="h-3 w-3 sm:h-4 sm:w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
-                        <span className="text-xs sm:text-sm">Preparing STL...</span>
-                      </>
-                    ) : !stlBlob && status === "completed" ? (
-                      <>
-                        <div className="h-3 w-3 sm:h-4 sm:w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
-                        <span className="text-xs sm:text-sm">Waiting for STL...</span>
-                      </>
-                    ) : (
-                      <>
-                        <PlusCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                        <span className="text-xs sm:text-sm">Add to FishCAD</span>
-                      </>
-                    )}
-                  </Button>
+                  <div className="w-full p-2 border border-gray-200 rounded-md text-xs sm:text-sm text-gray-700 bg-gray-50">
+                    <p className="mb-1 font-medium">To use with FISHCAD:</p>
+                    <ol className="list-decimal pl-4 space-y-0.5">
+                      <li>Download the STL file above</li>
+                      <li>Go to <a href="https://fishcad.com/import" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">fishcad.com/import</a></li>
+                      <li>Import the downloaded STL file</li>
+                    </ol>
+                  </div>
                   
                   <Button
                     className="w-full flex items-center justify-center"
