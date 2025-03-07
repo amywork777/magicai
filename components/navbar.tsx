@@ -9,7 +9,6 @@ export function Navbar() {
           <div className="bg-gradient-to-r from-blue-500 to-cyan-400 p-2 rounded-lg">
             <Sparkles className="h-6 w-6 text-white" />
           </div>
-          <span>MagicFish AI</span>
         </Link>
       </div>
     </header>

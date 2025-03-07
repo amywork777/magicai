@@ -6,25 +6,43 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, 
 })
 
+// Helper function to check if we're on a deployment domain that requires special handling
+function isDeploymentDomain(hostname: string) {
+  return hostname === 'magic.taiyaki.ai' || 
+         hostname.includes('vercel.app') || 
+         hostname.includes('taiyaki.ai');
+}
+
 export async function POST(request: Request) {
   try {
-    // Check if we're on the magic.taiyaki.ai domain and return a friendly message
+    // Check if we're on a deployment domain and return a friendly message
     const url = new URL(request.url);
-    if (url.hostname === 'magic.taiyaki.ai' || url.hostname.includes('vercel.app')) {
+    if (isDeploymentDomain(url.hostname)) {
+      console.log(`Request from deployment domain: ${url.hostname} - returning fallback response`);
       return NextResponse.json(
         { 
           error: "OpenAI API not configured on this deployment",
-          description: "This is a generated fallback description for a 3D model. For full functionality, please add the OpenAI API key to your environment variables."
+          description: "Create a 3D model based on the uploaded image. For full AI analysis functionality, please add the OpenAI API key to your environment variables."
         },
-        { status: 200 }
+        { 
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          }
+        }
       );
     }
     
     if (!process.env.OPENAI_API_KEY) {
       console.error("OPENAI_API_KEY not found in environment variables");
       return NextResponse.json(
-        { error: "OpenAI API key not configured" },
-        { status: 500 }
+        { 
+          error: "OpenAI API key not configured",
+          description: "Create a 3D model based on the uploaded image. Please add your OPENAI_API_KEY to the environment variables."
+        },
+        { status: 200 }
       );
     }
     
@@ -89,4 +107,19 @@ export async function POST(request: Request) {
       { status: 500 }
     )
   }
+}
+
+// Add OPTIONS method handler for CORS preflight requests
+export async function OPTIONS(request: Request) {
+  return NextResponse.json(
+    { success: true },
+    { 
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      }
+    }
+  );
 } 

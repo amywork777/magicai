@@ -1,17 +1,43 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+// Function to clean up and shorten the OpenAI-generated description
+const cleanDescription = (description: string): string => {
+  // Remove markdown formatting
+  let cleanedText = description
+    .replace(/#+\s/g, '') // Remove heading markers
+    .replace(/\*\*/g, '') // Remove bold markers
+    .replace(/\n+/g, ' ') // Replace multiple newlines with a single space
+    .replace(/\s+/g, ' ') // Replace multiple spaces with a single space
+    .trim();
+  
+  // Limit to 500 characters to ensure it works with Tripo API
+  if (cleanedText.length > 500) {
+    cleanedText = cleanedText.substring(0, 497) + '...';
+  }
+  
+  return cleanedText;
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { type, prompt, imageToken } = body
 
+    // If prompt is very long (likely from OpenAI Vision API), clean it up
+    const processedPrompt = prompt && prompt.length > 200 
+      ? cleanDescription(prompt)
+      : prompt;
+    
+    console.log("Original prompt length:", prompt?.length || 0);
+    console.log("Processed prompt length:", processedPrompt?.length || 0);
+    
     let requestBody
 
     if (type === "text") {
       // Text to model - without textures
       requestBody = {
         type: "text_to_model",
-        prompt,
+        prompt: processedPrompt,
         model_version: "v2.5-20250123",
         texture: false, // Disable textures
         pbr: false, // Disable PBR
