@@ -187,34 +187,81 @@ export function ModelGenerator() {
     
     toast({
       title: "Adding to FishCAD",
-      description: "Uploading your model to FishCAD...",
+      description: "Sending your model to FishCAD...",
     });
     
     try {
-      // This would be where you'd implement the actual API call to FishCAD
-      // For now, we'll just simulate it with a timeout
+      // Create a temporary URL for the STL blob
+      const stlBlobUrl = URL.createObjectURL(stlBlob);
       
+      // Determine the prompt based on input type
+      const prompt = inputType === "text" 
+        ? textPrompt 
+        : inputType === "image-text" 
+          ? imageTextPrompt 
+          : "Image-based 3D model";
+      
+      // Get metadata for the model
+      const metadata = {
+        title: prompt || "Generated 3D Model",
+        source: window.location.href,
+        tags: ["magicfish-ai", "generated", "3d-model"],
+        description: `3D model ${inputType.includes("image") ? "generated from an image" : "created from text prompt"}: "${prompt}"`,
+        generationMethod: inputType.includes("image") ? "image-to-3d" : "text-to-3d",
+        generatedAt: new Date().toISOString()
+      };
+      
+      // Send message to FISHCAD with the STL model
+      window.parent.postMessage({
+        type: "stl-import",
+        stlUrl: stlBlobUrl,
+        fileName: "magicfish-generated-model.stl",
+        metadata
+      }, "*"); // In production, replace "*" with "https://fishcad.com"
+      
+      // We'll show a success message after a brief delay
+      // In a real integration, we'd wait for a response from FISHCAD
       setTimeout(() => {
         toast({
           title: "Success!",
-          description: "Your model has been added to FishCAD. Visit fishcad.com to view it.",
+          description: "Your model has been sent to FishCAD. Visit fishcad.com to view it.",
         });
-      }, 2000);
+      }, 1500);
       
-      // In a real implementation you would do something like:
-      // const formData = new FormData();
-      // formData.append('file', stlBlob, 'model.stl');
-      // const response = await fetch('https://fishcad.com/api/upload', {
-      //   method: 'POST',
-      //   body: formData,
-      // });
-      // Process the response here...
+      // Set up a listener for responses from FISHCAD
+      const responseHandler = (event: MessageEvent) => {
+        // Check if this is a response from FISHCAD
+        if (event.data && event.data.type === 'stl-import-response') {
+          if (event.data.success) {
+            toast({
+              title: "Import Successful!",
+              description: "Your model was successfully imported to FishCAD.",
+            });
+          } else {
+            toast({
+              title: "Import Issue",
+              description: event.data.message || "There was an issue importing to FishCAD.",
+              variant: "destructive",
+            });
+          }
+          // Remove the listener after getting a response
+          window.removeEventListener('message', responseHandler);
+        }
+      };
+      
+      // Add the response listener
+      window.addEventListener('message', responseHandler);
+      
+      // Clean up the listener after a timeout (in case no response is received)
+      setTimeout(() => {
+        window.removeEventListener('message', responseHandler);
+      }, 30000); // 30 seconds timeout
       
     } catch (error) {
-      console.error('Error uploading to FishCAD:', error);
+      console.error('Error sending to FishCAD:', error);
       toast({
-        title: "Upload Failed",
-        description: "Failed to upload to FishCAD. Please try again.",
+        title: "Send Failed",
+        description: "Failed to send to FishCAD. Please try again.",
         variant: "destructive",
       });
     }
