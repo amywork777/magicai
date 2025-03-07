@@ -14,14 +14,16 @@ import {
  * 
  * This module provides functionality to find STL links on a page and
  * add "Add to FISHCAD" buttons next to them. When clicked, these buttons
- * will send the STL file to FISHCAD.
+ * will send the STL file to FISHCAD using a server-proxy approach.
  */
 
 // Button states
 enum ButtonState {
   READY = "Add to FISHCAD",
-  SENDING = "Sending...",
-  SENT = "Sent to FISHCAD",
+  REQUESTING = "Requesting...",
+  IMPORTING = "Importing...",
+  PROCESSING = "Processing...",
+  SENT = "Added to FISHCAD",
   ERROR = "Error!"
 }
 
@@ -41,7 +43,15 @@ const BUTTON_STYLES = {
     alignItems: "center",
     transition: "all 0.2s ease"
   },
-  sending: {
+  requesting: {
+    backgroundColor: "#ffa64d",
+    cursor: "default"
+  },
+  importing: {
+    backgroundColor: "#ffa64d",
+    cursor: "default"
+  },
+  processing: {
     backgroundColor: "#ffa64d",
     cursor: "default"
   },
@@ -53,12 +63,21 @@ const BUTTON_STYLES = {
   }
 };
 
+// Store active import requests with their buttons for updating
+const activeImports = new Map();
+
+// Generate a unique request ID
+function generateRequestId() {
+  return `stl-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
 // Interface for metadata that will be sent to FISHCAD
 interface FileMetadata {
   title?: string;
   source?: string;
   tags?: string[];
   description?: string;
+  fileSize?: number;
   [key: string]: any;
 }
 
@@ -108,6 +127,11 @@ export function addFishcadButtons() {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       
+      // Disable button and update state
+      button.disabled = true;
+      button.textContent = ButtonState.REQUESTING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.requesting);
+      
       // Get STL URL
       const stlUrl = link.href;
       
@@ -118,12 +142,59 @@ export function addFishcadButtons() {
         title: fileName,
       };
       
-      // Update button state
-      button.textContent = ButtonState.SENDING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sending);
-      
-      // Send message to parent window
-      fetchAndSendStlFile(stlUrl, fileName, metadata, button);
+      try {
+        // Generate unique request ID
+        const requestId = generateRequestId();
+        
+        // Store reference to button for later updates
+        activeImports.set(requestId, {
+          button,
+          stlUrl,
+          fileName,
+          startTime: Date.now()
+        });
+        
+        // Check if we're in an iframe and can access parent
+        const inIframe = window !== window.parent;
+        
+        if (inIframe) {
+          // Try parent communication first (proxy approach)
+          console.log(`Sending proxy request to parent window for ${fileName}`);
+          
+          window.parent.postMessage({
+            type: "stl-proxy-request",
+            requestId,
+            stlUrl,
+            fileName,
+            metadata
+          }, "*"); // In production, replace "*" with "https://fishcad.com"
+          
+          // Set timeout to fall back to direct method after 5 seconds
+          setTimeout(() => {
+            const importData = activeImports.get(requestId);
+            if (importData && importData.status !== 'completed') {
+              // If still not completed, try direct server approach
+              sendDirectServerRequest(requestId, stlUrl, fileName, metadata);
+            }
+          }, 5000);
+        } else {
+          // Direct server communication
+          sendDirectServerRequest(requestId, stlUrl, fileName, metadata);
+        }
+      } catch (error) {
+        console.error('Error requesting STL import:', error);
+        
+        // Show error and reset button
+        button.textContent = ButtonState.ERROR;
+        Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+        button.disabled = false;
+        
+        // Reset after delay
+        setTimeout(() => {
+          button.textContent = ButtonState.READY;
+          Object.assign(button.style, BUTTON_STYLES.default);
+        }, 3000);
+      }
     });
     
     // Insert button after link
@@ -131,143 +202,260 @@ export function addFishcadButtons() {
   });
 }
 
-// When a button is clicked, fetch the STL file and send it as base64 data
-const fetchAndSendStlFile = async (url: string, fileName: string, metadata: FileMetadata, button: HTMLElement) => {
+/**
+ * Send a direct request to FISHCAD server API
+ */
+async function sendDirectServerRequest(requestId: string, stlUrl: string, fileName: string, metadata: FileMetadata) {
+  const importData = activeImports.get(requestId);
+  if (!importData) return;
+  
+  const { button } = importData;
+  
   try {
-    // Update button to sending state
-    button.textContent = ButtonState.SENDING;
-    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sending);
+    console.log(`Sending direct server request to FISHCAD API for ${fileName}`);
     
-    // Fetch the STL file
-    const response = await fetch(url);
+    // Update button state
+    button.textContent = ButtonState.IMPORTING;
+    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+    
+    // Send POST request to FISHCAD API
+    const response = await fetch('https://fishcad.com/api/import-stl', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        stlUrl,
+        fileName,
+        source: window.location.href,
+        metadata
+      })
+    });
+    
     if (!response.ok) {
-      throw new Error(`Failed to fetch STL file: ${response.status} ${response.statusText}`);
+      throw new Error(`Server returned ${response.status}: ${response.statusText}`);
     }
     
-    // Get the STL file as a blob
-    const blob = await response.blob();
-    console.log(`STL blob size: ${blob.size} bytes`);
+    const data = await response.json();
     
-    // LARGE FILE HANDLING APPROACH
-    if (blob.size > 5 * 1024 * 1024) {
-      console.warn("Large STL file detected - using download + redirect approach");
-      
-      // Update button state to indicate download required
-      button.textContent = "Download & Upload";
-      Object.assign(button.style, BUTTON_STYLES.default, {
-        backgroundColor: "#0077ff",
+    if (data.success) {
+      // Store import ID and start polling for status
+      activeImports.set(requestId, {
+        ...importData,
+        importId: data.importId,
+        status: 'importing'
       });
       
-      // Create a click handler that will:
-      // 1. Download the STL file
-      // 2. Open FISHCAD in a new tab
-      button.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        // Create a download link
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        // Ask if they want to open FISHCAD
-        if (confirm("Would you like to open FISHCAD in a new tab to upload your model?")) {
-          window.open("https://fishcad.com/upload?source=magicfish", "_blank");
-        }
-        
-        // Update button
-        button.textContent = "Downloaded";
-        setTimeout(() => {
-          button.textContent = "Download & Upload";
-        }, 2000);
-      };
-      
-      return;
+      // Begin polling for status updates
+      pollImportStatus(requestId, data.importId);
+    } else {
+      throw new Error(data.message || 'Unknown error');
     }
-    
-    // NORMAL APPROACH FOR SMALLER FILES
-    // Convert the blob to base64
-    const reader = new FileReader();
-    reader.readAsDataURL(blob);
-    
-    reader.onload = () => {
-      // Get the base64 data
-      const base64Data = reader.result as string;
-      console.log(`Base64 data length: ${base64Data.length} characters`);
-      
-      // Log sending message
-      console.log("Sending STL model to FISHCAD with enhanced compatibility...");
-      
-      // Try different message formats that FISHCAD might expect
-      
-      // Format 1: Original format with stlData
-      window.parent.postMessage({
-        type: "stl-import",
-        stlData: base64Data,
-        fileName,
-        metadata
-      }, "*");
-      
-      // Format 2: Alternative format with data property
-      setTimeout(() => {
-        window.parent.postMessage({
-          type: "stl-import",
-          data: base64Data,
-          fileName,
-          metadata
-        }, "*");
-      }, 100);
-      
-      // Format 3: Simple format with minimal data
-      setTimeout(() => {
-        window.parent.postMessage({
-          type: "stl-import",
-          stl: base64Data,
-          name: fileName
-        }, "*");
-      }, 200);
-      
-      // Update button after delay
-      setTimeout(() => {
-        button.textContent = ButtonState.SENT;
-        Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sent);
-        
-        // Reset button after another delay
-        setTimeout(() => {
-          button.textContent = ButtonState.READY;
-          Object.assign(button.style, BUTTON_STYLES.default);
-        }, 3000);
-      }, 1000);
-    };
-    
-    reader.onerror = () => {
-      // Handle error
-      button.textContent = ButtonState.ERROR;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
-      
-      // Reset after a delay
-      setTimeout(() => {
-        button.textContent = ButtonState.READY;
-        Object.assign(button.style, BUTTON_STYLES.default);
-      }, 3000);
-    };
   } catch (error) {
-    console.error("Error fetching STL file:", error);
+    console.error('Error sending direct server request:', error);
     
-    // Update button to show error
+    // Show error and reset button
     button.textContent = ButtonState.ERROR;
     Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+    button.disabled = false;
     
-    // Reset button after a delay
+    // Reset after delay
     setTimeout(() => {
       button.textContent = ButtonState.READY;
       Object.assign(button.style, BUTTON_STYLES.default);
     }, 3000);
+    
+    // Remove from active imports
+    activeImports.delete(requestId);
   }
-};
+}
+
+/**
+ * Poll for import status updates
+ */
+async function pollImportStatus(requestId: string, importId: string) {
+  const importData = activeImports.get(requestId);
+  if (!importData) return;
+  
+  const { button } = importData;
+  
+  try {
+    // Try to use socket.io if available
+    if (window.io) {
+      console.log(`Connecting to socket.io for import ${importId}`);
+      
+      const socket = window.io('https://fishcad.com');
+      
+      socket.on('connect', () => {
+        console.log('Socket.io connected');
+        socket.emit('subscribe-import', importId);
+      });
+      
+      socket.on('import-status', (data) => {
+        if (data.importId === importId) {
+          updateImportUI(requestId, data.status, data);
+        }
+      });
+      
+      socket.on('disconnect', () => {
+        console.log('Socket.io disconnected, falling back to polling');
+        // Fall back to polling if socket disconnects
+        setTimeout(() => pollImportStatus(requestId, importId), 2000);
+      });
+      
+      // Store socket in active imports for later cleanup
+      activeImports.set(requestId, {
+        ...importData,
+        socket
+      });
+    } else {
+      // Fall back to polling
+      console.log(`Socket.io not available, polling for import ${importId}`);
+      
+      const checkStatus = async () => {
+        const currentImportData = activeImports.get(requestId);
+        if (!currentImportData) return;
+        
+        // Check if import was completed or failed
+        if (['completed', 'failed'].includes(currentImportData.status)) {
+          return;
+        }
+        
+        try {
+          const response = await fetch(`https://fishcad.com/api/import-status?id=${importId}`);
+          
+          if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+          }
+          
+          const data = await response.json();
+          
+          // Update UI based on status
+          updateImportUI(requestId, data.status, data);
+          
+          // Continue polling if not completed or failed
+          if (!['completed', 'failed'].includes(data.status)) {
+            setTimeout(checkStatus, 2000);
+          }
+        } catch (error) {
+          console.error('Error polling import status:', error);
+          
+          // Try again after longer delay
+          setTimeout(checkStatus, 5000);
+        }
+      };
+      
+      // Start polling
+      checkStatus();
+    }
+  } catch (error) {
+    console.error('Error setting up status polling:', error);
+    
+    // Show error and reset button
+    button.textContent = ButtonState.ERROR;
+    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+    button.disabled = false;
+    
+    // Reset after delay
+    setTimeout(() => {
+      button.textContent = ButtonState.READY;
+      Object.assign(button.style, BUTTON_STYLES.default);
+    }, 3000);
+    
+    // Remove from active imports
+    activeImports.delete(requestId);
+  }
+}
+
+/**
+ * Update the UI based on import status
+ */
+function updateImportUI(requestId: string, status: string, data: Record<string, any>) {
+  const importData = activeImports.get(requestId);
+  if (!importData) return;
+  
+  const { button } = importData;
+  
+  // Update status in active imports
+  activeImports.set(requestId, {
+    ...importData,
+    status
+  });
+  
+  console.log(`Import ${requestId} status: ${status}`);
+  
+  // Update button based on status
+  switch (status) {
+    case 'requesting':
+      button.textContent = ButtonState.REQUESTING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.requesting);
+      break;
+    
+    case 'importing':
+      button.textContent = ButtonState.IMPORTING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+      break;
+    
+    case 'processing':
+      button.textContent = ButtonState.PROCESSING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.processing);
+      break;
+    
+    case 'completed':
+      button.textContent = ButtonState.SENT;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sent);
+      button.disabled = false;
+      
+      // Change button to "Open in FISHCAD" after short delay
+      setTimeout(() => {
+        if (data.modelUrl) {
+          button.textContent = "Open in FISHCAD";
+          button.onclick = (e: MouseEvent) => {
+            e.preventDefault();
+            window.open(data.modelUrl, '_blank');
+          };
+        } else {
+          // Reset button after a delay if no model URL
+          setTimeout(() => {
+            button.textContent = ButtonState.READY;
+            Object.assign(button.style, BUTTON_STYLES.default);
+          }, 3000);
+        }
+      }, 1500);
+      
+      // Clean up
+      if (importData.socket) {
+        importData.socket.disconnect();
+      }
+      break;
+    
+    case 'failed':
+      button.textContent = ButtonState.ERROR;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+      button.disabled = false;
+      
+      // Show error message if available
+      if (data.error) {
+        console.error(`Import error: ${data.error}`);
+      }
+      
+      // Reset button after a delay
+      setTimeout(() => {
+        button.textContent = ButtonState.READY;
+        Object.assign(button.style, BUTTON_STYLES.default);
+      }, 3000);
+      
+      // Clean up
+      if (importData.socket) {
+        importData.socket.disconnect();
+      }
+      break;
+    
+    default:
+      // Unknown status
+      console.warn(`Unknown import status: ${status}`);
+  }
+}
 
 /**
  * Handles response messages from FISHCAD
@@ -281,52 +469,67 @@ export function handleResponseFromFishcad(event: MessageEvent) {
   const data = event.data;
   console.log("Received message in Taiyaki integration:", data);
   
-  // Check if the message is a response from FISHCAD (handle multiple possible formats)
-  if (data && 
-      (data.type === 'stl-import-response' || 
-       data.action === 'stl-import-response' || 
-       data.type === 'import-response' || 
-       (data.type === 'response' && data.for === 'stl-import'))) {
-    
-    console.log("FISHCAD response received in Taiyaki integration:", data);
-    
-    // Find all buttons that might match
-    const buttons = document.querySelectorAll('.fishcad-button');
-    let button: HTMLElement | undefined;
-    
-    // Try to find matching button by fileName
-    if (data.fileName) {
-      button = Array.from(buttons).find(
-        btn => (btn as HTMLElement).dataset.fileName === data.fileName
-      ) as HTMLElement | undefined;
+  // Handle different message types
+  if (data) {
+    // Handle proxy response
+    if (data.type === 'stl-proxy-response' && data.requestId) {
+      const requestId = data.requestId;
+      const importData = activeImports.get(requestId);
+      
+      if (importData) {
+        // Update UI based on status
+        updateImportUI(requestId, data.status, data);
+      }
     }
     
-    // If no button found by fileName, just use the last one that was clicked
-    if (!button && buttons.length > 0) {
-      // Use the most recently used button
-      const buttonsArray = Array.from(buttons) as HTMLElement[];
-      button = buttonsArray.find(btn => 
-        btn.textContent === ButtonState.SENDING
-      ) || buttonsArray[buttonsArray.length - 1];
-    }
-    
-    if (button) {
-      if (data.success) {
-        // Success state
-        button.textContent = ButtonState.SENT;
-        Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sent);
-      } else {
-        // Error state
-        console.error("FISHCAD import error:", data.error || "Unknown error");
-        button.textContent = ButtonState.ERROR;
-        Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+    // Handle direct import response
+    else if (data.type === 'stl-import-response' || 
+             data.action === 'stl-import-response' || 
+             data.type === 'import-response' || 
+             (data.type === 'response' && data.for === 'stl-import')) {
+      
+      console.log("FISHCAD response received in Taiyaki integration:", data);
+      
+      // Find the button associated with the file
+      const buttons = document.querySelectorAll('.fishcad-button');
+      let button: HTMLElement | undefined;
+      
+      // Try to find matching button by fileName
+      if (data.fileName) {
+        button = Array.from(buttons).find(
+          btn => (btn as HTMLElement).dataset.fileName === data.fileName
+        ) as HTMLElement | undefined;
       }
       
-      // Reset button after delay
-      setTimeout(() => {
-        button.textContent = ButtonState.READY;
-        Object.assign(button.style, BUTTON_STYLES.default);
-      }, 3000);
+      // If no button found by fileName, just use the last one that was clicked
+      if (!button && buttons.length > 0) {
+        // Use the most recently used button
+        const buttonsArray = Array.from(buttons) as HTMLElement[];
+        button = buttonsArray.find(btn => 
+          btn.textContent === ButtonState.REQUESTING || 
+          btn.textContent === ButtonState.IMPORTING || 
+          btn.textContent === ButtonState.PROCESSING
+        ) || buttonsArray[buttonsArray.length - 1];
+      }
+      
+      if (button) {
+        if (data.success) {
+          // Success state
+          button.textContent = ButtonState.SENT;
+          Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sent);
+        } else {
+          // Error state
+          console.error("FISHCAD import error:", data.error || "Unknown error");
+          button.textContent = ButtonState.ERROR;
+          Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+        }
+        
+        // Reset button after delay
+        setTimeout(() => {
+          button.textContent = ButtonState.READY;
+          Object.assign(button.style, BUTTON_STYLES.default);
+        }, 3000);
+      }
     }
   }
 }
@@ -402,7 +605,24 @@ export function initializeTaiyakiIntegration() {
       observer.disconnect();
     }
     clearInterval(urlChangeInterval);
+    
+    // Clean up any active sockets
+    activeImports.forEach(importData => {
+      if (importData.socket) {
+        importData.socket.disconnect();
+      }
+    });
+    
+    // Clear active imports
+    activeImports.clear();
   };
+}
+
+// For TypeScript
+declare global {
+  interface Window {
+    io?: any;
+  }
 }
 
 // Export the main functions for individual use

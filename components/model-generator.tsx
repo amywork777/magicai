@@ -205,153 +205,126 @@ export function ModelGenerator() {
         tags: ["magicfish-ai", "generated", "3d-model"],
         description: `3D model ${inputType.includes("image") ? "generated from an image" : "created from text prompt"}: "${prompt}"`,
         generationMethod: inputType.includes("image") ? "image-to-3d" : "text-to-3d",
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        fileSize: stlBlob.size
       };
       
       // Check the size of the STL blob
       console.log(`STL blob size: ${stlBlob.size} bytes`);
       
-      // LARGE FILE HANDLING APPROACH
-      if (stlBlob.size > 5 * 1024 * 1024) {
-        console.warn("Large STL file detected - using download + redirect approach");
-        
-        // 1. Create a download link for the STL file
-        const stlUrl = URL.createObjectURL(stlBlob);
-        const fileName = "magicfish-generated-model.stl";
-        
-        // 2. Notify user about the large file
-        toast({
-          title: "Large 3D Model",
-          description: "The model is too large to transfer directly. You'll need to download it and upload to FISHCAD.",
-          duration: 5000,
-        });
-        
-        // 3. Start the download automatically
-        const a = document.createElement("a");
-        a.href = stlUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        
-        // 4. Ask if they want to open FISHCAD in a new tab
-        setTimeout(() => {
-          if (confirm("Would you like to open FISHCAD in a new tab to upload your model?")) {
-            // Open FISHCAD in a new tab, potentially with some context parameters
-            window.open("https://fishcad.com/upload?source=magicfish", "_blank");
-          }
-        }, 1000);
-        
-        return;
-      }
+      // Generate a unique request ID
+      const requestId = `stl-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+      const fileName = "magicfish-generated-model.stl";
       
-      // NORMAL APPROACH FOR SMALLER FILES
-      // Convert the STL blob to a base64 string
-      const reader = new FileReader();
-      reader.readAsDataURL(stlBlob);
+      // Check if we're in an iframe and can access parent
+      const inIframe = window !== window.parent;
       
-      reader.onload = () => {
-        // The result is a data URL that includes the base64-encoded data
-        const base64Data = reader.result as string;
-        console.log(`Base64 data length: ${base64Data.length} characters`);
+      if (inIframe) {
+        // Try parent communication first (proxy approach)
+        console.log("Using parent window proxy approach to send to FISHCAD");
         
-        // Log sending message to FISHCAD
-        console.log("Sending STL model to FISHCAD with enhanced compatibility...");
-        
-        // Try different message formats that FISHCAD might expect
-        
-        // Format 1: Original format with stlData
+        // First attempt to tell FISHCAD about the STL
         window.parent.postMessage({
-          type: "stl-import",
-          stlData: base64Data,
-          fileName: "magicfish-generated-model.stl",
-          metadata
-        }, "*");
+          type: "stl-proxy-request",
+          requestId,
+          fileName,
+          metadata,
+          // For the model generator, we can include a short-lived URL for the STL blob
+          // This will be more reliable than sending the whole model in a postMessage
+          stlUrl: URL.createObjectURL(stlBlob)
+        }, "*"); // In production, replace "*" with "https://fishcad.com"
         
-        // Format 2: Alternative format with data property
-        setTimeout(() => {
-          window.parent.postMessage({
-            type: "stl-import",
-            data: base64Data,
-            fileName: "magicfish-generated-model.stl",
-            metadata
-          }, "*");
-        }, 100);
-        
-        // Format 3: Simple format with minimal data
-        setTimeout(() => {
-          window.parent.postMessage({
-            type: "stl-import",
-            stl: base64Data,
-            name: "magicfish-generated-model.stl"
-          }, "*");
-        }, 200);
-        
-        toast({
-          title: "Sending to FishCAD",
-          description: "Your model is being sent to FishCAD...",
-        });
-        
-        // After a delay, show a message suggesting to check FISHCAD
-        setTimeout(() => {
-          toast({
-            title: "Transfer Attempted",
-            description: "Check FISHCAD to see if your model was received. If not, try downloading and importing manually.",
-            duration: 5000,
-          });
-        }, 3000);
-      };
-      
-      reader.onerror = (error) => {
-        console.error("Error reading STL file:", error);
-        toast({
-          title: "Error",
-          description: "Failed to prepare STL data for FishCAD.",
-          variant: "destructive",
-        });
-      };
-      
-      // Set up a listener for responses from FISHCAD with enhanced debugging
-      const responseHandler = (event: MessageEvent) => {
-        console.log("Received message:", event.data);
-        
-        // Check if this is a response from FISHCAD
-        if (event.data && (event.data.type === 'stl-import-response' || event.data.action === 'stl-import-response')) {
-          console.log("FISHCAD response received:", event.data);
+        // Set up a listener for responses from FISHCAD
+        const responseHandler = (event: MessageEvent) => {
+          console.log("Received message:", event.data);
           
-          if (event.data.success) {
-            toast({
-              title: "Import Successful!",
-              description: "Your model was successfully imported to FishCAD.",
-            });
-          } else {
-            console.error("FISHCAD import error:", event.data.error || "Unknown error");
-            toast({
-              title: "Import Failed",
-              description: event.data.message || "There was an issue importing to FishCAD: " + (event.data.error || "Unknown error"),
-              variant: "destructive",
-            });
+          // Check if this is a response for our request
+          if (event.data && 
+              event.data.type === 'stl-proxy-response' && 
+              event.data.requestId === requestId) {
+            
+            console.log("FISHCAD proxy response received:", event.data);
+            
+            // Update UI based on status
+            updateImportUI(event.data.status, event.data);
+            
+            // If completed or failed, remove the listener
+            if (['completed', 'failed'].includes(event.data.status)) {
+              window.removeEventListener('message', responseHandler);
+            }
           }
-          // Remove the listener after getting a response
+        };
+        
+        // Add the response listener
+        window.addEventListener('message', responseHandler);
+        
+        // Fall back to file upload + server approach after 5 seconds if no response
+        const fallbackTimeout = setTimeout(() => {
+          console.log("No response from FISHCAD proxy, falling back to server API");
           window.removeEventListener('message', responseHandler);
-        }
-      };
-      
-      // Add the response listener
-      window.addEventListener('message', responseHandler);
-      
-      // Clean up the listener after a timeout (in case no response is received)
-      setTimeout(() => {
-        window.removeEventListener('message', responseHandler);
-        // Check if stlBlob is still not null, which means we're still on this page
-        if (stlBlob) {
-          toast({
-            title: "Import Status Unknown",
-            description: "No response received from FishCAD. Please check if the model was imported.",
-          });
-        }
-      }, 30000); // 30 seconds timeout
-      
+          sendToServerAPI(stlBlob, fileName, metadata);
+        }, 5000);
+        
+        // Function to handle status updates
+        const updateImportUI = (status: string, data: Record<string, any>) => {
+          console.log(`Import status: ${status}`);
+          
+          switch (status) {
+            case 'requesting':
+              toast({
+                title: "Requesting Import",
+                description: "Initiating import to FISHCAD...",
+              });
+              break;
+              
+            case 'importing':
+              toast({
+                title: "Importing Model",
+                description: "FISHCAD is downloading your model...",
+              });
+              break;
+              
+            case 'processing':
+              toast({
+                title: "Processing Model",
+                description: "FISHCAD is processing your model...",
+              });
+              break;
+              
+            case 'completed':
+              clearTimeout(fallbackTimeout);
+              toast({
+                title: "Import Successful!",
+                description: "Your model has been added to FISHCAD.",
+              });
+              
+              // If model URL is provided, offer to open it
+              if (data.modelUrl) {
+                setTimeout(() => {
+                  if (confirm("Your model has been imported to FISHCAD. Would you like to view it now?")) {
+                    window.open(data.modelUrl, '_blank');
+                  }
+                }, 1000);
+              }
+              break;
+              
+            case 'failed':
+              clearTimeout(fallbackTimeout);
+              toast({
+                title: "Import Failed",
+                description: data.error || "Failed to import to FISHCAD.",
+                variant: "destructive",
+              });
+              break;
+              
+            default:
+              console.warn(`Unknown import status: ${status}`);
+          }
+        };
+      } else {
+        // Direct server API approach
+        sendToServerAPI(stlBlob, fileName, metadata);
+      }
     } catch (error) {
       console.error('Error sending to FishCAD:', error);
       toast({
@@ -360,6 +333,91 @@ export function ModelGenerator() {
         variant: "destructive",
       });
     }
+  };
+  
+  // Function to send STL directly to FISHCAD server API
+  const sendToServerAPI = async (stlBlob: Blob, fileName: string, metadata: Record<string, any>) => {
+    try {
+      toast({
+        title: "Uploading to FISHCAD",
+        description: "Sending your model to FISHCAD server...",
+      });
+      
+      // Create a FormData object to send the STL file
+      const formData = new FormData();
+      formData.append('file', stlBlob, fileName);
+      formData.append('metadata', JSON.stringify(metadata));
+      
+      // Send the file to FISHCAD's API
+      const response = await fetch('https://fishcad.com/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: "Upload Successful!",
+          description: "Your model has been added to FISHCAD.",
+        });
+        
+        // If model URL is provided, offer to open it
+        if (data.modelUrl) {
+          setTimeout(() => {
+            if (confirm("Your model has been imported to FISHCAD. Would you like to view it now?")) {
+              window.open(data.modelUrl, '_blank');
+            }
+          }, 1000);
+        }
+      } else {
+        throw new Error(data.message || 'Unknown error');
+      }
+    } catch (error) {
+      console.error('Error uploading to FISHCAD server:', error);
+      
+      // If server upload fails, fall back to download + redirect approach
+      toast({
+        title: "Direct Upload Failed",
+        description: "Falling back to download method...",
+        variant: "destructive",
+      });
+      
+      // Fall back to download + redirect approach
+      downloadAndRedirect(stlBlob, fileName);
+    }
+  };
+  
+  // Function to handle download and redirect as last resort
+  const downloadAndRedirect = (stlBlob: Blob, fileName: string) => {
+    // Create a URL for the STL blob
+    const stlUrl = URL.createObjectURL(stlBlob);
+    
+    // Notify user about the fallback approach
+    toast({
+      title: "Using Alternative Method",
+      description: "Downloading model for manual upload to FISHCAD.",
+      duration: 5000,
+    });
+    
+    // Download the STL file
+    const a = document.createElement("a");
+    a.href = stlUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    // Ask if they want to open FISHCAD
+    setTimeout(() => {
+      if (confirm("Would you like to open FISHCAD in a new tab to upload your model?")) {
+        window.open("https://fishcad.com/upload?source=magicfish", "_blank");
+      }
+    }, 1000);
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
