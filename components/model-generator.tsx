@@ -1264,13 +1264,28 @@ export function ModelGenerator() {
                     )}
                   </Button>
                   
-                  <div className="w-full p-2 border border-gray-200 rounded-md text-xs sm:text-sm text-gray-700 bg-gray-50">
-                    <p className="mb-1 font-medium">To use with FISHCAD:</p>
-                    <ol className="list-decimal pl-4 space-y-0.5">
-                      <li>Download the STL file above</li>
-                      <li>Go to <a href="https://fishcad.com/import" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">fishcad.com/import</a></li>
-                      <li>Import the downloaded STL file</li>
-                    </ol>
+                  <div className="w-full p-3 border border-gray-200 rounded-md text-xs sm:text-sm text-gray-700 bg-gray-50">
+                    <h3 className="font-medium mb-2">How to use with FISHCAD:</h3>
+                    
+                    <div className="mb-3">
+                      <p className="font-medium">1. Download the STL File</p>
+                      <ul className="pl-4 mt-1 space-y-1 list-disc">
+                        <li>Click the download link for any STL model on our site</li>
+                        <li>Note where the file is saved (usually your Downloads folder)</li>
+                      </ul>
+                    </div>
+                    
+                    <div className="mb-2">
+                      <p className="font-medium">2. Import into FISHCAD</p>
+                      <ul className="pl-4 mt-1 space-y-1 list-disc">
+                        <li>Go to <a href="https://fishcad.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">FISHCAD.com</a></li>
+                        <li>Click the "Import" button in the top menu</li>
+                        <li>Select your downloaded STL file</li>
+                        <li>Your model will appear in your FISHCAD workspace</li>
+                      </ul>
+                    </div>
+                    
+                    <p className="mt-3 text-sm italic">That's it! You can now edit, modify, or use the model in your FISHCAD project.</p>
                   </div>
                   
                   <Button
