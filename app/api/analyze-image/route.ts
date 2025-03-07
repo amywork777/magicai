@@ -6,34 +6,41 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY, 
 })
 
-// Helper function to check if we're on a deployment domain that requires special handling
-function isDeploymentDomain(hostname: string) {
-  return hostname === 'magic.taiyaki.ai' || 
-         hostname.includes('vercel.app') || 
-         hostname.includes('taiyaki.ai');
-}
+// Remove the domain detection function as we want consistent behavior everywhere
+// function isDeploymentDomain(hostname: string) {
+//   return hostname === 'magic.taiyaki.ai' || 
+//          hostname.includes('vercel.app') || 
+//          hostname.includes('taiyaki.ai');
+// }
 
 export async function POST(request: Request) {
   try {
-    // Check if we're on a deployment domain and return a friendly message
-    const url = new URL(request.url);
-    if (isDeploymentDomain(url.hostname)) {
-      console.log(`Request from deployment domain: ${url.hostname} - returning fallback response`);
-      return NextResponse.json(
-        { 
-          error: "OpenAI API not configured on this deployment",
-          description: "Create a 3D model based on the uploaded image. For full AI analysis functionality, please add the OpenAI API key to your environment variables."
-        },
-        { 
-          status: 200,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          }
-        }
-      );
-    }
+    // Add CORS headers for all responses to ensure this works when embedded on fishcad.com
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    };
+    
+    // Remove domain check and always attempt to use OpenAI API if key is available
+    // const url = new URL(request.url);
+    // if (isDeploymentDomain(url.hostname)) {
+    //   console.log(`Request from deployment domain: ${url.hostname} - returning fallback response`);
+    //   return NextResponse.json(
+    //     { 
+    //       error: "OpenAI API not configured on this deployment",
+    //       description: "Create a 3D model based on the uploaded image. For full AI analysis functionality, please add the OpenAI API key to your environment variables."
+    //     },
+    //     { 
+    //       status: 200,
+    //       headers: {
+    //         'Access-Control-Allow-Origin': '*',
+    //         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    //         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    //       }
+    //     }
+    //   );
+    // }
     
     if (!process.env.OPENAI_API_KEY) {
       console.error("OPENAI_API_KEY not found in environment variables");
@@ -42,7 +49,10 @@ export async function POST(request: Request) {
           error: "OpenAI API key not configured",
           description: "Create a 3D model based on the uploaded image. Please add your OPENAI_API_KEY to the environment variables."
         },
-        { status: 200 }
+        { 
+          status: 200,
+          headers: corsHeaders 
+        }
       );
     }
     
@@ -53,7 +63,7 @@ export async function POST(request: Request) {
     if (!imageFile) {
       return NextResponse.json(
         { error: "Image file is required" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       )
     }
 
@@ -99,17 +109,27 @@ export async function POST(request: Request) {
     
     console.log("Generated description:", description);
 
-    return NextResponse.json({ description })
+    return NextResponse.json({ description }, { headers: corsHeaders })
   } catch (error) {
     console.error("Error analyzing image:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to analyze image" },
-      { status: 500 }
+      { 
+        error: error instanceof Error ? error.message : "Failed to analyze image",
+        description: "Create a 3D model based on the uploaded image." // Provide a fallback description even on error
+      },
+      { 
+        status: 500,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        }
+      }
     )
   }
 }
 
-// Add OPTIONS method handler for CORS preflight requests
+// Keep the OPTIONS method handler for CORS preflight requests
 export async function OPTIONS(request: Request) {
   return NextResponse.json(
     { success: true },

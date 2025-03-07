@@ -385,15 +385,6 @@ export function ModelGenerator() {
     }
   }
 
-  // Define a function to check if we're on a deployment domain that requires special handling
-  const isOnDeploymentDomain = () => {
-    if (typeof window === "undefined") return false;
-    const hostname = window.location.hostname;
-    return hostname === "magic.taiyaki.ai" || 
-           hostname.includes("vercel.app") ||
-           hostname.includes("taiyaki.ai");
-  };
-
   const handleImageTextSubmit = async () => {
     if (!selectedImageTextFile) {
       toast({
@@ -414,89 +405,73 @@ export function ModelGenerator() {
       setStlUrl(null)
 
       let description = "";
-      const isDomainMagicTaiyaki = isOnDeploymentDomain();
       
-      // Skip OpenAI analysis if deployed to magic.taiyaki.ai or vercel.app
-      if (isDomainMagicTaiyaki) {
-        console.log("Detected deployment domain - skipping OpenAI analysis");
-        // Use the provided text input or a generic description based on the filename
-        description = imageTextPrompt || 
-          `Create a 3D model based on the uploaded image. ${
-            selectedImageTextFile.name ? `The image is called: ${selectedImageTextFile.name}.` : ''
-          }`;
-          
+      // Always attempt to analyze the image regardless of domain
+      try {
+        // First analyze the image with OpenAI Vision API
+        const formData = new FormData()
+        formData.append("image", selectedImageTextFile)
+        formData.append("prompt", imageTextPrompt || "")
+
         toast({
-          title: "AI Analysis Skipped",
-          description: "Using direct image upload on this deployment. Add OpenAI key to enable AI analysis.",
-        });
-      } else {
-        // Only try OpenAI analysis on localhost or other domains
-        try {
-          // First analyze the image with OpenAI Vision API
-          const formData = new FormData()
-          formData.append("image", selectedImageTextFile)
-          formData.append("prompt", imageTextPrompt || "")
+          title: "Analyzing Image",
+          description: "Using AI to analyze your image...",
+        })
 
+        const analysisResponse = await fetch("/api/analyze-image", {
+          method: "POST",
+          body: formData,
+        })
+
+        // Always try to read the response body regardless of status code
+        const analysisData = await analysisResponse.json();
+
+        // Use the description from the response if available, even if it's an error response
+        if (analysisData.description) {
+          description = analysisData.description;
+          console.log("Using description from API response:", description);
+          
           toast({
-            title: "Analyzing Image",
-            description: "Using AI to analyze your image...",
-          })
-
-          const analysisResponse = await fetch("/api/analyze-image", {
-            method: "POST",
-            body: formData,
-          })
-
-          // Always try to read the response body regardless of status code
-          const analysisData = await analysisResponse.json();
-
-          // Use the description from the response if available, even if it's an error response
-          if (analysisData.description) {
-            description = analysisData.description;
-            console.log("Using description from API response:", description);
-            
-            toast({
-              title: analysisResponse.ok ? "Image Analyzed" : "Using Fallback Description",
-              description: "Creating 3D model based on the description...",
-            });
-          } else if (analysisResponse.ok && analysisData.description === "") {
-            // Handle empty description from a successful response
-            console.warn("Image analysis returned empty description, falling back to direct prompt");
-            description = imageTextPrompt || 
-              `Create a 3D model based on the uploaded image. ${
-                selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
-              }`;
-              
-            toast({
-              title: "Using Basic Description",
-              description: "The AI analysis returned an empty result.",
-            });
-          } else {
-            // Handle unsuccessful response without description
-            console.warn("Image analysis failed, falling back to direct prompt");
-            description = imageTextPrompt || 
-              `Create a 3D model based on the uploaded image. ${
-                selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
-              }`;
-              
-            toast({
-              title: "Image Analysis Unavailable",
-              description: "Using direct prompt instead. The AI enhancement feature requires additional setup.",
-            });
-          }
-        } catch (error) {
-          console.warn("Error during image analysis:", error);
-          // Fallback to direct text description if analysis fails
+            title: analysisResponse.ok ? "Image Analyzed" : "Using Fallback Description",
+            description: "Creating 3D model based on the description...",
+          });
+        } else if (analysisResponse.ok && analysisData.description === "") {
+          // Handle empty description from a successful response
+          console.warn("Image analysis returned empty description, falling back to direct prompt");
           description = imageTextPrompt || 
             `Create a 3D model based on the uploaded image. ${
               selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
             }`;
             
           toast({
-            title: "Image Analysis Failed",
-            description: "Using direct prompt instead. This feature requires OpenAI API setup.",
+            title: "Using Basic Description",
+            description: "The AI analysis returned an empty result.",
+          });
+        } else {
+          // Handle unsuccessful response without description
+          console.warn("Image analysis failed, falling back to direct prompt");
+          description = imageTextPrompt || 
+            `Create a 3D model based on the uploaded image. ${
+              selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
+            }`;
+            
+          toast({
+            title: "Image Analysis Unavailable",
+            description: "Using direct prompt instead. The AI enhancement feature requires additional setup.",
           });
         }
+      } catch (error) {
+        console.warn("Error during image analysis:", error);
+        // Fallback to direct text description if analysis fails
+        description = imageTextPrompt || 
+          `Create a 3D model based on the uploaded image. ${
+            selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
+          }`;
+          
+        toast({
+          title: "Image Analysis Failed",
+          description: "Using direct prompt instead. This feature requires OpenAI API setup.",
+        });
       }
 
       setIsAnalyzingImage(false);
