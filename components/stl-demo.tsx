@@ -11,11 +11,11 @@ import { AlertCircle, ArrowRight, Check, Loader2 } from "lucide-react";
  * STL Demo Component
  * 
  * This component demonstrates the Taiyaki integration by displaying
- * links to STL files that should have "Open in FISHCAD" buttons added to them.
+ * links to STL files that should have "open in fishcad using import" text links added to them.
  */
 export function StlDemo() {
   const [showDemo, setShowDemo] = useState(false);
-  const [testMode, setTestMode] = useState<'buttons' | 'localStorage'>('buttons');
+  const [testMode, setTestMode] = useState<'links' | 'localStorage'>('links');
   const [localStorageContent, setLocalStorageContent] = useState<string>("");
   
   // Sample STL files (now with real URLs for testing)
@@ -119,16 +119,16 @@ export function StlDemo() {
           
           {showDemo && (
             <div className="space-y-4 mt-4">
-              <Tabs defaultValue="buttons" onValueChange={(v) => setTestMode(v as 'buttons' | 'localStorage')}>
+              <Tabs defaultValue="links" onValueChange={(v) => setTestMode(v as 'links' | 'localStorage')}>
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="buttons">Button Demo</TabsTrigger>
+                  <TabsTrigger value="links">Link Demo</TabsTrigger>
                   <TabsTrigger value="localStorage">localStorage Test</TabsTrigger>
                 </TabsList>
                 
-                <TabsContent value="buttons" className="mt-4">
+                <TabsContent value="links" className="mt-4">
                   <p className="text-sm text-gray-500 mb-4">
-                    The links below should have "Open in FISHCAD" buttons next to them.
-                    These buttons are automatically added by the Taiyaki integration.
+                    The links below should have "open in fishcad using import" text links added to them.
+                    These links are automatically added by the Taiyaki integration.
                   </p>
                   
                   <ul className="space-y-3 list-disc pl-5">
@@ -150,7 +150,7 @@ export function StlDemo() {
                   <div className="mt-6 p-4 bg-gray-100 rounded-md">
                     <h3 className="font-medium mb-2">Dynamic Content Test</h3>
                     <p className="text-sm text-gray-600 mb-3">
-                      This button will add a new STL link dynamically. The Taiyaki integration should detect it and add a button.
+                      This button will add a new STL link dynamically. The Taiyaki integration should detect it and add a text link.
                     </p>
                     <Button
                       onClick={() => {
@@ -183,7 +183,7 @@ export function StlDemo() {
                     <h3 className="font-semibold text-lg">localStorage Integration Test</h3>
                     <p className="text-sm text-gray-600">
                       This test simulates the localStorage-based approach for sending STL files to FISHCAD.
-                      When a user clicks the "Open in FISHCAD" button, it stores information in localStorage,
+                      When a user clicks the "open in fishcad using import" link, it stores information in localStorage,
                       downloads the STL file, and then redirects to FISHCAD.
                     </p>
                     
@@ -218,7 +218,7 @@ export function StlDemo() {
                         How It Works
                       </h4>
                       <ol className="mt-2 text-sm text-blue-700 space-y-2 pl-5 list-decimal">
-                        <li>When user clicks "Open in FISHCAD" button, we store file info in localStorage</li>
+                        <li>When user clicks "open in fishcad using import" link, we store file info in localStorage</li>
                         <li>The browser downloads the STL file to the user's computer</li>
                         <li>The page then redirects to FISHCAD's import page</li>
                         <li>FISHCAD reads from localStorage to know a file is pending import</li>

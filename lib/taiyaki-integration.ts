@@ -19,41 +19,37 @@ import {
 
 // Button states
 enum ButtonState {
-  READY = "Open in FISHCAD",
+  READY = "open in fishcad using import",
   IMPORTING = "Opening FISHCAD...",
   SENT = "Opened in FISHCAD",
   ERROR = "Error!"
 }
 
-// Style for the FISHCAD buttons
-const BUTTON_STYLES = {
+// Style for the FISHCAD links
+const LINK_STYLES = {
   default: {
-    backgroundColor: "#ff7b00",
-    color: "white",
-    border: "none",
-    padding: "5px 10px",
-    borderRadius: "4px",
+    color: "#ff7b00",
     fontSize: "12px",
     fontWeight: "bold",
-    cursor: "pointer",
+    cursor: "pointer", 
     marginLeft: "8px",
+    textDecoration: "none",
     display: "inline-flex",
-    alignItems: "center",
-    transition: "all 0.2s ease"
+    alignItems: "center"
   },
   importing: {
-    backgroundColor: "#ffa64d",
+    color: "#ffa64d",
     cursor: "default"
   },
   sent: {
-    backgroundColor: "#4CAF50"
+    color: "#4CAF50"
   },
   error: {
-    backgroundColor: "#f44336"
+    color: "#f44336"
   }
 };
 
-// Store active import requests with their buttons for updating
+// Store active import requests with their links for updating
 const activeImports = new Map();
 
 // Generate a unique request ID
@@ -72,7 +68,7 @@ interface FileMetadata {
 }
 
 /**
- * Adds "Open in FISHCAD" buttons next to all STL links on the page
+ * Adds "open in fishcad using import" links next to all STL links on the page
  */
 export function addFishcadButtons() {
   if (!isBrowser()) return;
@@ -86,19 +82,19 @@ export function addFishcadButtons() {
            fileType === 'stl';
   });
   
-  // For each STL link, add a button if it doesn't already exist
+  // For each STL link, add a text link if it doesn't already exist
   stlLinks.forEach(link => {
-    // Check if button already exists
+    // Check if link already exists
     const nextElement = link.nextElementSibling;
-    if (nextElement && nextElement.classList.contains('fishcad-button')) {
-      return; // Button already exists
+    if (nextElement && nextElement.classList.contains('fishcad-link')) {
+      return; // Link already exists
     }
     
-    // Create new button
-    const button = document.createElement('button');
-    button.textContent = ButtonState.READY;
-    button.classList.add('fishcad-button');
-    button.dataset.stlUrl = link.href;
+    // Create new text link
+    const fishcadLink = document.createElement('a');
+    fishcadLink.textContent = ButtonState.READY;
+    fishcadLink.classList.add('fishcad-link');
+    fishcadLink.dataset.stlUrl = link.href;
     
     // Get file name from URL or link text
     let fileName = link.textContent?.trim() || '';
@@ -108,19 +104,18 @@ export function addFishcadButtons() {
     }
     
     // Store the filename in the dataset
-    button.dataset.fileName = fileName;
+    fishcadLink.dataset.fileName = fileName;
     
     // Apply styles
-    Object.assign(button.style, BUTTON_STYLES.default);
+    Object.assign(fishcadLink.style, LINK_STYLES.default);
     
     // Add click handler
-    button.addEventListener('click', (event) => {
+    fishcadLink.addEventListener('click', (event) => {
       event.preventDefault();
       
-      // Update button state
-      button.disabled = true;
-      button.textContent = ButtonState.IMPORTING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+      // Update link state
+      fishcadLink.textContent = ButtonState.IMPORTING;
+      Object.assign(fishcadLink.style, LINK_STYLES.default, LINK_STYLES.importing);
       
       // Get STL URL
       const stlUrl = link.href;
@@ -148,17 +143,20 @@ export function addFishcadButtons() {
         // Redirect to FISHCAD with special parameter
         window.location.href = "https://fishcad.com/import?pending=true";
         
-        // Update button state (in case navigation is canceled)
+        // Update link state (in case navigation is canceled)
         setTimeout(() => {
-          button.disabled = false;
-          button.textContent = ButtonState.READY;
-          Object.assign(button.style, BUTTON_STYLES.default);
+          fishcadLink.textContent = ButtonState.READY;
+          Object.assign(fishcadLink.style, LINK_STYLES.default);
         }, 5000);
       }, 100); // Short delay to ensure download starts
     });
     
-    // Insert button after link
-    link.parentNode?.insertBefore(button, link.nextSibling);
+    // Insert link after the original STL link
+    link.parentNode?.insertBefore(fishcadLink, link.nextSibling);
+    
+    // Add a separator between original link and fishcad link
+    const separator = document.createTextNode(" | ");
+    link.parentNode?.insertBefore(separator, fishcadLink);
   });
 }
 
@@ -169,14 +167,14 @@ async function sendDirectServerRequest(requestId: string, stlUrl: string, fileNa
   const importData = activeImports.get(requestId);
   if (!importData) return;
   
-  const { button } = importData;
+  const { link } = importData;
   
   try {
     console.log(`Sending direct server request to FISHCAD API for ${fileName}`);
     
-    // Update button state
-    button.textContent = ButtonState.IMPORTING;
-    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+    // Update link state
+    link.textContent = ButtonState.IMPORTING;
+    Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.importing);
     
     // Send POST request to FISHCAD API
     const response = await fetch('https://fishcad.com/api/import-stl', {
@@ -214,15 +212,15 @@ async function sendDirectServerRequest(requestId: string, stlUrl: string, fileNa
   } catch (error) {
     console.error('Error sending direct server request:', error);
     
-    // Show error and reset button
-    button.textContent = ButtonState.ERROR;
-    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
-    button.disabled = false;
+    // Show error and reset link
+    link.textContent = ButtonState.ERROR;
+    Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.error);
+    link.disabled = false;
     
     // Reset after delay
     setTimeout(() => {
-      button.textContent = ButtonState.READY;
-      Object.assign(button.style, BUTTON_STYLES.default);
+      link.textContent = ButtonState.READY;
+      Object.assign(link.style, LINK_STYLES.default);
     }, 3000);
     
     // Remove from active imports
@@ -237,7 +235,7 @@ async function pollImportStatus(requestId: string, importId: string) {
   const importData = activeImports.get(requestId);
   if (!importData) return;
   
-  const { button } = importData;
+  const { link } = importData;
   
   try {
     // Try to use socket.io if available
@@ -311,15 +309,15 @@ async function pollImportStatus(requestId: string, importId: string) {
   } catch (error) {
     console.error('Error setting up status polling:', error);
     
-    // Show error and reset button
-    button.textContent = ButtonState.ERROR;
-    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
-    button.disabled = false;
+    // Show error and reset link
+    link.textContent = ButtonState.ERROR;
+    Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.error);
+    link.disabled = false;
     
     // Reset after delay
     setTimeout(() => {
-      button.textContent = ButtonState.READY;
-      Object.assign(button.style, BUTTON_STYLES.default);
+      link.textContent = ButtonState.READY;
+      Object.assign(link.style, LINK_STYLES.default);
     }, 3000);
     
     // Remove from active imports
@@ -334,7 +332,7 @@ function updateImportUI(requestId: string, status: string, data: Record<string, 
   const importData = activeImports.get(requestId);
   if (!importData) return;
   
-  const { button } = importData;
+  const { link } = importData;
   
   // Update status in active imports
   activeImports.set(requestId, {
@@ -344,41 +342,41 @@ function updateImportUI(requestId: string, status: string, data: Record<string, 
   
   console.log(`Import ${requestId} status: ${status}`);
   
-  // Update button based on status
+  // Update link based on status
   switch (status) {
     case 'requesting':
-      button.textContent = ButtonState.IMPORTING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+      link.textContent = ButtonState.IMPORTING;
+      Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.importing);
       break;
     
     case 'importing':
-      button.textContent = ButtonState.IMPORTING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+      link.textContent = ButtonState.IMPORTING;
+      Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.importing);
       break;
     
     case 'processing':
-      button.textContent = ButtonState.IMPORTING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+      link.textContent = ButtonState.IMPORTING;
+      Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.importing);
       break;
     
     case 'completed':
-      button.textContent = ButtonState.SENT;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sent);
-      button.disabled = false;
+      link.textContent = ButtonState.SENT;
+      Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.sent);
+      link.disabled = false;
       
-      // Change button to "Open in FISHCAD" after short delay
+      // Change link to "Open in FISHCAD" after short delay
       setTimeout(() => {
         if (data.modelUrl) {
-          button.textContent = "Open in FISHCAD";
-          button.onclick = (e: MouseEvent) => {
+          link.textContent = "Open in FISHCAD";
+          link.onclick = (e: MouseEvent) => {
             e.preventDefault();
             window.open(data.modelUrl, '_blank');
           };
         } else {
-          // Reset button after a delay if no model URL
+          // Reset link after a delay if no model URL
           setTimeout(() => {
-            button.textContent = ButtonState.READY;
-            Object.assign(button.style, BUTTON_STYLES.default);
+            link.textContent = ButtonState.READY;
+            Object.assign(link.style, LINK_STYLES.default);
           }, 3000);
         }
       }, 1500);
@@ -390,19 +388,19 @@ function updateImportUI(requestId: string, status: string, data: Record<string, 
       break;
     
     case 'failed':
-      button.textContent = ButtonState.ERROR;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
-      button.disabled = false;
+      link.textContent = ButtonState.ERROR;
+      Object.assign(link.style, LINK_STYLES.default, LINK_STYLES.error);
+      link.disabled = false;
       
       // Show error message if available
       if (data.error) {
         console.error(`Import error: ${data.error}`);
       }
       
-      // Reset button after a delay
+      // Reset link after a delay
       setTimeout(() => {
-        button.textContent = ButtonState.READY;
-        Object.assign(button.style, BUTTON_STYLES.default);
+        link.textContent = ButtonState.READY;
+        Object.assign(link.style, LINK_STYLES.default);
       }, 3000);
       
       // Clean up
@@ -441,13 +439,13 @@ export function handleResponseFromFishcad(event: MessageEvent) {
 }
 
 /**
- * Sets up an observer for dynamic content to add buttons to new STL links
+ * Sets up an observer for dynamic content to add links to new STL links
  */
 export function setupDynamicContentObserver() {
   if (!isBrowser()) return { disconnect: () => {} };
   
   // Create a debounced version of addFishcadButtons to prevent too many calls
-  const debouncedAddButtons = debounce(addFishcadButtons, 300);
+  const debouncedAddLinks = debounce(addFishcadButtons, 300);
   
   // Create and return the observer
   return createDomObserver((mutations) => {
@@ -459,7 +457,7 @@ export function setupDynamicContentObserver() {
     );
     
     if (shouldCheck) {
-      debouncedAddButtons();
+      debouncedAddLinks();
     }
   });
 }
@@ -477,7 +475,7 @@ export function setupUrlChangeDetection() {
     const currentUrl = window.location.href;
     if (currentUrl !== lastUrl) {
       lastUrl = currentUrl;
-      // URL has changed, wait a bit for content to load then add buttons
+      // URL has changed, wait a bit for content to load then add links
       setTimeout(addFishcadButtons, 500);
     }
   }, 1000);
@@ -491,7 +489,7 @@ export function setupUrlChangeDetection() {
 export function initializeTaiyakiIntegration() {
   if (!isBrowser()) return () => {};
   
-  // Add buttons to initial content
+  // Add links to initial content
   // Slight delay to ensure DOM is fully loaded
   setTimeout(addFishcadButtons, 200);
   
