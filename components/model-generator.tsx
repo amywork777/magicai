@@ -405,38 +405,69 @@ export function ModelGenerator() {
       setStlUrl(null)
 
       let description = "";
-
-      try {
-        // First analyze the image with OpenAI Vision API
-        const formData = new FormData()
-        formData.append("image", selectedImageTextFile)
-        formData.append("prompt", imageTextPrompt || "")
-
-        toast({
-          title: "Analyzing Image",
-          description: "Using AI to analyze your image...",
-        })
-
-        const analysisResponse = await fetch("/api/analyze-image", {
-          method: "POST",
-          body: formData,
-        })
-
-        if (analysisResponse.ok) {
-          const analysisData = await analysisResponse.json()
+      const isDomainMagicTaiyaki = typeof window !== 'undefined' && 
+        (window.location.hostname === 'magic.taiyaki.ai' || 
+         window.location.hostname.includes('vercel.app'));
+      
+      // Skip OpenAI analysis if deployed to magic.taiyaki.ai or vercel.app
+      if (isDomainMagicTaiyaki) {
+        console.log("Detected magic.taiyaki.ai or vercel deployment - skipping OpenAI analysis");
+        // Use the provided text input or a generic description based on the filename
+        description = imageTextPrompt || 
+          `Create a 3D model based on the uploaded image. ${
+            selectedImageTextFile.name ? `The image is called: ${selectedImageTextFile.name}.` : ''
+          }`;
           
-          if (analysisData.description) {
-            description = analysisData.description;
-            console.log("AI Generated Description:", description);
+        toast({
+          title: "AI Analysis Skipped",
+          description: "Using direct image upload on this deployment. Add OpenAI key to enable AI analysis.",
+        });
+      } else {
+        // Only try OpenAI analysis on localhost or other domains
+        try {
+          // First analyze the image with OpenAI Vision API
+          const formData = new FormData()
+          formData.append("image", selectedImageTextFile)
+          formData.append("prompt", imageTextPrompt || "")
+
+          toast({
+            title: "Analyzing Image",
+            description: "Using AI to analyze your image...",
+          })
+
+          const analysisResponse = await fetch("/api/analyze-image", {
+            method: "POST",
+            body: formData,
+          })
+
+          if (analysisResponse.ok) {
+            const analysisData = await analysisResponse.json()
             
+            if (analysisData.description) {
+              description = analysisData.description;
+              console.log("AI Generated Description:", description);
+              
+              toast({
+                title: "Image Analyzed",
+                description: "Creating 3D model based on the AI analysis...",
+              });
+            }
+          } else {
+            console.warn("Image analysis failed, falling back to direct prompt");
+            // If analysis fails, use the user's input text or a generic description
+            description = imageTextPrompt || 
+              `Create a 3D model based on the uploaded image. ${
+                selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
+              }`;
+              
             toast({
-              title: "Image Analyzed",
-              description: "Creating 3D model based on the AI analysis...",
+              title: "Image Analysis Unavailable",
+              description: "Using direct prompt instead. The AI enhancement feature requires additional setup.",
             });
           }
-        } else {
-          console.warn("Image analysis failed, falling back to direct prompt");
-          // If analysis fails, use the user's input text or a generic description
+        } catch (error) {
+          console.warn("Error during image analysis:", error);
+          // Fallback to direct text description if analysis fails
           description = imageTextPrompt || 
             `Create a 3D model based on the uploaded image. ${
               selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
@@ -444,21 +475,9 @@ export function ModelGenerator() {
             
           toast({
             title: "Image Analysis Unavailable",
-            description: "Using direct prompt instead. The AI enhancement feature requires additional setup.",
+            description: "Using direct prompt instead. This feature requires OpenAI API setup.",
           });
         }
-      } catch (error) {
-        console.warn("Error during image analysis:", error);
-        // Fallback to direct text description if analysis fails
-        description = imageTextPrompt || 
-          `Create a 3D model based on the uploaded image. ${
-            selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
-          }`;
-          
-        toast({
-          title: "Image Analysis Unavailable",
-          description: "Using direct prompt instead. This feature requires OpenAI API setup.",
-        });
       }
 
       setIsAnalyzingImage(false);
@@ -470,7 +489,7 @@ export function ModelGenerator() {
         }`;
       }
 
-      // Try to upload the image first (this should work in both environments)
+      // Try to upload the image first
       const imageFormData = new FormData();
       imageFormData.append("file", selectedImageTextFile);
 
@@ -485,7 +504,7 @@ export function ModelGenerator() {
 
       const uploadData = await uploadResponse.json();
       
-      // Then start the model generation using the image token and text description
+      // Then start the model generation
       setStatus("generating");
       
       // Determine whether to use image-to-model or text-to-model based on what was successful
