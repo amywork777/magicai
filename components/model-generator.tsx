@@ -187,13 +187,10 @@ export function ModelGenerator() {
     
     toast({
       title: "Adding to FishCAD",
-      description: "Sending your model to FishCAD...",
+      description: "Preparing your model for FishCAD...",
     });
     
     try {
-      // Create a temporary URL for the STL blob
-      const stlBlobUrl = URL.createObjectURL(stlBlob);
-      
       // Determine the prompt based on input type
       const prompt = inputType === "text" 
         ? textPrompt 
@@ -211,22 +208,39 @@ export function ModelGenerator() {
         generatedAt: new Date().toISOString()
       };
       
-      // Send message to FISHCAD with the STL model
-      window.parent.postMessage({
-        type: "stl-import",
-        stlUrl: stlBlobUrl,
-        fileName: "magicfish-generated-model.stl",
-        metadata
-      }, "*"); // In production, replace "*" with "https://fishcad.com"
+      // Convert the STL blob to a base64 string
+      const reader = new FileReader();
+      reader.readAsDataURL(stlBlob);
       
-      // We'll show a success message after a brief delay
-      // In a real integration, we'd wait for a response from FISHCAD
-      setTimeout(() => {
+      reader.onload = () => {
+        // The result is a data URL that includes the base64-encoded data
+        const base64Data = reader.result as string;
+        
+        // Log sending message to FISHCAD
+        console.log("Sending STL model to FISHCAD...");
+        
+        // Send message to FISHCAD with the STL model data
+        window.parent.postMessage({
+          type: "stl-import",
+          stlData: base64Data,
+          fileName: "magicfish-generated-model.stl",
+          metadata
+        }, "*"); // In production, replace "*" with "https://fishcad.com"
+        
         toast({
-          title: "Success!",
-          description: "Your model has been sent to FishCAD. Visit fishcad.com to view it.",
+          title: "Sending to FishCAD",
+          description: "Your model is being sent to FishCAD...",
         });
-      }, 1500);
+      };
+      
+      reader.onerror = (error) => {
+        console.error("Error reading STL file:", error);
+        toast({
+          title: "Error",
+          description: "Failed to prepare STL data for FishCAD.",
+          variant: "destructive",
+        });
+      };
       
       // Set up a listener for responses from FISHCAD
       const responseHandler = (event: MessageEvent) => {
@@ -238,9 +252,10 @@ export function ModelGenerator() {
               description: "Your model was successfully imported to FishCAD.",
             });
           } else {
+            console.error("FISHCAD import error:", event.data.error || "Unknown error");
             toast({
-              title: "Import Issue",
-              description: event.data.message || "There was an issue importing to FishCAD.",
+              title: "Import Failed",
+              description: event.data.message || "There was an issue importing to FishCAD: " + (event.data.error || "Unknown error"),
               variant: "destructive",
             });
           }
@@ -255,6 +270,13 @@ export function ModelGenerator() {
       // Clean up the listener after a timeout (in case no response is received)
       setTimeout(() => {
         window.removeEventListener('message', responseHandler);
+        // Check if stlBlob is still not null, which means we're still on this page
+        if (stlBlob) {
+          toast({
+            title: "Import Status Unknown",
+            description: "No response received from FishCAD. Please check if the model was imported.",
+          });
+        }
       }, 30000); // 30 seconds timeout
       
     } catch (error) {
@@ -786,8 +808,26 @@ export function ModelGenerator() {
         
         // Automatically start STL conversion when model is ready
         if (finalModelUrl) {
+          // Show toast notification for STL conversion
+          toast({
+            title: "Processing STL",
+            description: "Converting your 3D model to STL format...",
+          });
+          
           // Start STL conversion
-          convertToStl(finalModelUrl);
+          convertToStl(finalModelUrl)
+            .then(blob => {
+              if (blob) {
+                toast({
+                  title: "STL Ready",
+                  description: "Your model is ready to be added to FISHCAD.",
+                });
+              }
+            })
+            .catch(error => {
+              console.error("Error in automatic STL conversion:", error);
+              // Error is already handled in convertToStl
+            });
         }
         
         toast({
@@ -1307,12 +1347,24 @@ export function ModelGenerator() {
               )}
 
               {/* STL Viewer */}
-              {stlUrl && status === "completed" && (
+              {status === "completed" && (
                 <div className="my-2 sm:mb-4 bg-gray-100 rounded-lg overflow-hidden border" style={{ height: "180px", minHeight: "180px" }}>
-                  <div 
-                    ref={setStlViewerRef} 
-                    className="w-full h-full"
-                  ></div>
+                  {isConvertingStl ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center">
+                      <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                      <p className="text-sm text-gray-600">Converting to STL format...</p>
+                    </div>
+                  ) : !stlUrl && !stlBlob ? (
+                    <div className="w-full h-full flex flex-col items-center justify-center">
+                      <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-2"></div>
+                      <p className="text-sm text-gray-600">Preparing 3D model...</p>
+                    </div>
+                  ) : (
+                    <div 
+                      ref={setStlViewerRef} 
+                      className="w-full h-full"
+                    ></div>
+                  )}
                 </div>
               )}
               
@@ -1344,11 +1396,25 @@ export function ModelGenerator() {
                     variant="default"
                     style={{ backgroundColor: "#ff7b00", color: "white" }}
                     onClick={addToFishCAD}
-                    disabled={!stlBlob}
+                    disabled={!stlBlob || isConvertingStl}
                     size="sm"
                   >
-                    <PlusCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
-                    <span className="text-xs sm:text-sm">Add to FishCAD</span>
+                    {isConvertingStl ? (
+                      <>
+                        <div className="h-3 w-3 sm:h-4 sm:w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
+                        <span className="text-xs sm:text-sm">Preparing STL...</span>
+                      </>
+                    ) : !stlBlob && status === "completed" ? (
+                      <>
+                        <div className="h-3 w-3 sm:h-4 sm:w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
+                        <span className="text-xs sm:text-sm">Waiting for STL...</span>
+                      </>
+                    ) : (
+                      <>
+                        <PlusCircle className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                        <span className="text-xs sm:text-sm">Add to FishCAD</span>
+                      </>
+                    )}
                   </Button>
                   
                   <Button

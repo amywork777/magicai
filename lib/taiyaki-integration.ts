@@ -91,6 +91,16 @@ export function addFishcadButtons() {
     button.classList.add('fishcad-button');
     button.dataset.stlUrl = link.href;
     
+    // Get file name from URL or link text
+    let fileName = link.textContent?.trim() || '';
+    if (!fileName || fileName === link.href) {
+      // Extract filename from URL
+      fileName = getFilenameFromUrl(link.href);
+    }
+    
+    // Store the filename in the dataset
+    button.dataset.fileName = fileName;
+    
     // Apply styles
     Object.assign(button.style, BUTTON_STYLES.default);
     
@@ -100,13 +110,6 @@ export function addFishcadButtons() {
       
       // Get STL URL
       const stlUrl = link.href;
-      
-      // Get file name from URL or link text
-      let fileName = link.textContent?.trim() || '';
-      if (!fileName || fileName === stlUrl) {
-        // Extract filename from URL
-        fileName = getFilenameFromUrl(stlUrl);
-      }
       
       // Gather metadata
       const baseMetadata = extractPageMetadata();
@@ -120,12 +123,45 @@ export function addFishcadButtons() {
       Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sending);
       
       // Send message to parent window
+      fetchAndSendStlFile(stlUrl, fileName, metadata, button);
+    });
+    
+    // Insert button after link
+    link.parentNode?.insertBefore(button, link.nextSibling);
+  });
+}
+
+// When a button is clicked, fetch the STL file and send it as base64 data
+const fetchAndSendStlFile = async (url: string, fileName: string, metadata: FileMetadata, button: HTMLElement) => {
+  try {
+    // Fetch the STL file
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch STL file: ${response.status} ${response.statusText}`);
+    }
+    
+    // Get the STL file as a blob
+    const blob = await response.blob();
+    
+    // Convert the blob to base64
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    
+    reader.onload = () => {
+      // Get the base64 data
+      const base64Data = reader.result as string;
+      
+      // Update button to sending state
+      button.textContent = ButtonState.SENDING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sending);
+      
+      // Send the message to FISHCAD
       window.parent.postMessage({
         type: "stl-import",
-        stlUrl,
+        stlData: base64Data,
         fileName,
         metadata
-      }, "*");  // In production, replace "*" with "https://fishcad.com"
+      }, "*"); // In production, replace "*" with "https://fishcad.com"
       
       // Update button after delay
       setTimeout(() => {
@@ -138,12 +174,33 @@ export function addFishcadButtons() {
           Object.assign(button.style, BUTTON_STYLES.default);
         }, 3000);
       }, 1000);
-    });
+    };
     
-    // Insert button after link
-    link.parentNode?.insertBefore(button, link.nextSibling);
-  });
-}
+    reader.onerror = () => {
+      // Handle error
+      button.textContent = ButtonState.ERROR;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+      
+      // Reset after a delay
+      setTimeout(() => {
+        button.textContent = ButtonState.READY;
+        Object.assign(button.style, BUTTON_STYLES.default);
+      }, 3000);
+    };
+  } catch (error) {
+    console.error("Error fetching STL file:", error);
+    
+    // Update button to show error
+    button.textContent = ButtonState.ERROR;
+    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
+    
+    // Reset button after a delay
+    setTimeout(() => {
+      button.textContent = ButtonState.READY;
+      Object.assign(button.style, BUTTON_STYLES.default);
+    }, 3000);
+  }
+};
 
 /**
  * Handles response messages from FISHCAD
@@ -158,10 +215,12 @@ export function handleResponseFromFishcad(event: MessageEvent) {
   
   // Check if the message is a response from FISHCAD
   if (data && data.type === 'stl-import-response') {
+    console.log("Received response from FISHCAD:", data);
+    
     // Find the button associated with the file
     const buttons = document.querySelectorAll('.fishcad-button');
     const button = Array.from(buttons).find(
-      btn => (btn as HTMLElement).dataset.stlUrl === data.stlUrl
+      btn => (btn as HTMLElement).dataset.fileName === data.fileName
     ) as HTMLElement | undefined;
     
     if (button) {
@@ -171,6 +230,7 @@ export function handleResponseFromFishcad(event: MessageEvent) {
         Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sent);
       } else {
         // Error state
+        console.error("FISHCAD import error:", data.error || "Unknown error");
         button.textContent = ButtonState.ERROR;
         Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
       }
