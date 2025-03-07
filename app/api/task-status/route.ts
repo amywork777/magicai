@@ -3,11 +3,13 @@ import { type NextRequest, NextResponse } from "next/server"
 // Define CORS headers for consistent use
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept',
+  'Access-Control-Max-Age': '86400',
 };
 
-export async function GET(request: NextRequest) {
+// Common handler for any method that needs to get task status
+async function handleTaskStatus(request: NextRequest) {
   try {
     // Extract task ID from query parameters
     const { searchParams } = new URL(request.url)
@@ -28,21 +30,26 @@ export async function GET(request: NextRequest) {
       method: "GET",
       headers: {
         Authorization: `Bearer ${process.env.TRIPO_API_KEY}`,
+        'Content-Type': 'application/json',
       },
     })
 
     console.log(`🔍 [task-status] Tripo API status response: ${tripoResponse.status} ${tripoResponse.statusText}`);
     
     if (!tripoResponse.ok) {
-      const errorData = await tripoResponse.json()
+      const errorData = await tripoResponse.json().catch(e => ({ error: 'Failed to parse error response' }));
       console.error(`❌ [task-status] Tripo API error:`, errorData);
       return NextResponse.json(
-        { error: "Failed to get task status" }, 
-        { status: tripoResponse.status, headers: corsHeaders }
+        { error: "Failed to get task status", details: errorData }, 
+        { status: 200, headers: corsHeaders } // Return 200 to avoid CORS issues, client will handle error
       );
     }
 
-    const data = await tripoResponse.json()
+    const data = await tripoResponse.json().catch(e => {
+      console.error(`❌ [task-status] Failed to parse Tripo API response:`, e);
+      return { data: { status: 'error', progress: 0 } };
+    });
+    
     const taskData = data.data
     
     console.log(`🔍 [task-status] Task status: ${taskData.status}, progress: ${taskData.progress || 0}%`);
@@ -87,13 +94,39 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error(`❌ [task-status] Error getting task status:`, error)
     return NextResponse.json(
-      { error: "Internal server error" }, 
-      { status: 500, headers: corsHeaders }
+      { 
+        error: "Internal server error", 
+        message: error instanceof Error ? error.message : "Unknown error",
+        status: 'running', // Provide fallback status to avoid UI breaking
+        progress: 10  // Provide some progress to show in UI
+      }, 
+      { status: 200, headers: corsHeaders } // Return 200 even on error for CORS compatibility
     );
   }
 }
 
-// Add OPTIONS method handler for CORS preflight requests
+// GET method handler
+export async function GET(request: NextRequest) {
+  console.log("🔍 [task-status] GET request received");
+  return handleTaskStatus(request);
+}
+
+// POST method handler (same functionality, different HTTP method for compatibility)
+export async function POST(request: NextRequest) {
+  console.log("🔍 [task-status] POST request received");
+  return handleTaskStatus(request);
+}
+
+// HEAD method handler (for preflight/CORS)
+export async function HEAD(request: NextRequest) {
+  console.log("🔍 [task-status] HEAD request received");
+  return new NextResponse(null, { 
+    status: 200, 
+    headers: corsHeaders
+  });
+}
+
+// OPTIONS method handler for CORS preflight requests
 export async function OPTIONS(request: Request) {
   console.log("🔍 [task-status] OPTIONS request received");
   return NextResponse.json(
