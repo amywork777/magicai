@@ -15,6 +15,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    domains: ['tripo-data.cdn.bcebos.com'],
   },
   transpilePackages: ['three', '@react-three/fiber', '@react-three/drei', 'expo', 'expo-asset', 'expo-gl', 'expo-file-system', 'react-native'],
   experimental: {
@@ -42,6 +43,16 @@ const nextConfig = {
     });
 
     return config;
+  },
+  // Configure environment variables that must be available on the server
+  serverRuntimeConfig: {
+    // Make sure these variables get properly passed to the server environment
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    TRIPO_API_KEY: process.env.TRIPO_API_KEY,
+  },
+  // Make Next.js pass our env variables to the browser
+  env: {
+    NEXT_PUBLIC_DEPLOYMENT_NAME: process.env.NEXT_PUBLIC_DEPLOYMENT_NAME || 'local',
   },
 }
 

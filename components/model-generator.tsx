@@ -417,21 +417,33 @@ export function ModelGenerator() {
           title: "Analyzing Image",
           description: "Using AI to analyze your image...",
         })
-        
-        console.log(`🔍 [CLIENT] Starting image analysis for ${selectedImageTextFile.name} (size: ${Math.round(selectedImageTextFile.size / 1024)}KB)`);
-        console.log(`🔍 [CLIENT] Current hostname: ${window.location.hostname}`);
 
+        console.log("🔍 Sending image for analysis to /api/analyze-image...");
+        
+        // Log hostname for debugging
+        console.log("📍 Current hostname:", window.location.hostname);
+        
         const analysisResponse = await fetch("/api/analyze-image", {
           method: "POST",
           body: formData,
-        })
-        
-        console.log(`🔍 [CLIENT] Image analysis response status: ${analysisResponse.status} ${analysisResponse.statusText}`);
+        }).catch(error => {
+          console.error("❌ Network error during fetch:", error);
+          throw error; // Re-throw to be caught by the outer catch
+        });
+
+        console.log("📥 Received response from /api/analyze-image:", {
+          status: analysisResponse.status,
+          statusText: analysisResponse.statusText,
+          headers: Object.fromEntries([...analysisResponse.headers])
+        });
 
         // Always try to read the response body regardless of status code
-        const analysisData = await analysisResponse.json();
-        
-        console.log(`🔍 [CLIENT] Image analysis response data:`, analysisData);
+        const analysisData = await analysisResponse.json().catch(error => {
+          console.error("❌ Error parsing response JSON:", error);
+          return {}; // Return empty object to avoid further errors
+        });
+
+        console.log("📄 Analysis response data:", analysisData);
 
         // Use the description from the response if available, even if it's an error response
         if (analysisData.description) {

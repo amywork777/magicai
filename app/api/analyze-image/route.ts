@@ -14,14 +14,9 @@ const openai = new OpenAI({
 // }
 
 export async function POST(request: Request) {
+  console.log("🔍 [SERVER] /api/analyze-image endpoint called");
+  
   try {
-    console.log("🔍 [analyze-image] Received image analysis request");
-    
-    // Log request URL and hostname for debugging
-    const url = new URL(request.url);
-    console.log(`🔍 [analyze-image] Request URL: ${url.toString()}`);
-    console.log(`🔍 [analyze-image] Hostname: ${url.hostname}`);
-    
     // Add CORS headers for all responses to ensure this works when embedded on fishcad.com
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
@@ -29,28 +24,11 @@ export async function POST(request: Request) {
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
     
-    // Remove domain check and always attempt to use OpenAI API if key is available
-    // const url = new URL(request.url);
-    // if (isDeploymentDomain(url.hostname)) {
-    //   console.log(`Request from deployment domain: ${url.hostname} - returning fallback response`);
-    //   return NextResponse.json(
-    //     { 
-    //       error: "OpenAI API not configured on this deployment",
-    //       description: "Create a 3D model based on the uploaded image. For full AI analysis functionality, please add the OpenAI API key to your environment variables."
-    //     },
-    //     { 
-    //       status: 200,
-    //       headers: {
-    //         'Access-Control-Allow-Origin': '*',
-    //         'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    //         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    //       }
-    //     }
-    //   );
-    // }
+    const url = new URL(request.url);
+    console.log(`🔍 [SERVER] Request from hostname: ${url.hostname}`);
     
     if (!process.env.OPENAI_API_KEY) {
-      console.error("❌ [analyze-image] OPENAI_API_KEY not found in environment variables");
+      console.error("❌ [SERVER] OPENAI_API_KEY not found in environment variables");
       return NextResponse.json(
         { 
           error: "OpenAI API key not configured",
@@ -63,99 +41,129 @@ export async function POST(request: Request) {
       );
     }
     
-    console.log("✅ [analyze-image] OPENAI_API_KEY found, proceeding with analysis");
+    console.log("✅ [SERVER] OPENAI_API_KEY is available");
     
-    const formData = await request.formData()
-    const imageFile = formData.get("image") as File
-    const textPrompt = formData.get("prompt") as string
+    let formData;
+    try {
+      formData = await request.formData();
+      console.log("✅ [SERVER] FormData parsed successfully");
+    } catch (error) {
+      console.error("❌ [SERVER] Error parsing FormData:", error);
+      return NextResponse.json(
+        { 
+          error: "Failed to parse form data",
+          description: "Error processing the uploaded image. Please try again."
+        },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+    
+    const imageFile = formData.get("image") as File;
+    const textPrompt = formData.get("prompt") as string;
     
     if (!imageFile) {
-      console.error("❌ [analyze-image] No image file provided in request");
+      console.error("❌ [SERVER] No image file in request");
       return NextResponse.json(
         { error: "Image file is required" },
         { status: 400, headers: corsHeaders }
-      )
+      );
     }
 
-    console.log(`🔍 [analyze-image] Analyzing image (size: ${Math.round(imageFile.size / 1024)}KB) with text prompt: ${textPrompt || "[No additional prompt]"}`);
+    console.log(`✅ [SERVER] Received image: ${imageFile.name}, size: ${Math.round(imageFile.size/1024)}KB, type: ${imageFile.type}`);
+    console.log(`✅ [SERVER] Text prompt: "${textPrompt || "[No additional prompt]"}"`);
     
     // Convert the file to base64
-    const arrayBuffer = await imageFile.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-    const base64Image = buffer.toString("base64")
-    const dataUri = `data:${imageFile.type};base64,${base64Image}`
-    
-    console.log(`🔍 [analyze-image] Image converted to base64 (length: ${base64Image.length} chars)`);
-    
-    // Construct prompt for Vision API - optimized for Tripo compatibility
-    const userPrompt = textPrompt 
-      ? `Look at this image and create a simple, clear description (no more than 3-4 sentences) of what 3D model should be created from it. ${textPrompt}` 
-      : "Look at this image and create a simple, clear description (no more than 3-4 sentences) of what 3D model should be created from it. Focus on the main object or character.";
-    
-    console.log("🔍 [analyze-image] Calling OpenAI Vision API...");
-    
-    // Call OpenAI Vision API with instructions for a concise description
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: "You are a 3D modeling expert who creates brief, clear descriptions for 3D models. Keep descriptions concise (under 400 characters), focusing only on the main object, its shape, and key features. Avoid flowery language, formatting (like markdown), and excessive details. The descriptions will be used directly with a text-to-3D API."
-        },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: userPrompt },
+    try {
+      const arrayBuffer = await imageFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64Image = buffer.toString("base64");
+      const dataUri = `data:${imageFile.type};base64,${base64Image}`;
+      
+      console.log(`✅ [SERVER] Image converted to base64 (${Math.round(base64Image.length/1024)}KB)`);
+      
+      // Construct prompt for Vision API - optimized for Tripo compatibility
+      const userPrompt = textPrompt 
+        ? `Look at this image and create a simple, clear description (no more than 3-4 sentences) of what 3D model should be created from it. ${textPrompt}` 
+        : "Look at this image and create a simple, clear description (no more than 3-4 sentences) of what 3D model should be created from it. Focus on the main object or character.";
+      
+      console.log("🔍 [SERVER] Calling OpenAI Vision API...");
+      
+      // Call OpenAI Vision API with instructions for a concise description
+      try {
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
             {
-              type: "image_url",
-              image_url: {
-                url: dataUri,
-              },
+              role: "system",
+              content: "You are a 3D modeling expert who creates brief, clear descriptions for 3D models. Keep descriptions concise (under 400 characters), focusing only on the main object, its shape, and key features. Avoid flowery language, formatting (like markdown), and excessive details. The descriptions will be used directly with a text-to-3D API."
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: userPrompt },
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: dataUri,
+                  },
+                },
+              ],
             },
           ],
+          max_tokens: 400,
+        });
+        
+        // Extract the generated description
+        const description = response.choices[0]?.message?.content || "";
+        
+        console.log("✅ [SERVER] OpenAI API response received");
+        console.log(`✅ [SERVER] Generated description: "${description}"`);
+        
+        return NextResponse.json({ description }, { headers: corsHeaders });
+      } catch (openaiError) {
+        console.error("❌ [SERVER] OpenAI API error:", openaiError);
+        return NextResponse.json(
+          { 
+            error: "OpenAI API error",
+            message: openaiError instanceof Error ? openaiError.message : "Unknown OpenAI error",
+            description: "Create a 3D model based on the uploaded image. The AI analysis service encountered an error."
+          },
+          { status: 200, headers: corsHeaders }
+        );
+      }
+    } catch (processingError) {
+      console.error("❌ [SERVER] Error processing image:", processingError);
+      return NextResponse.json(
+        { 
+          error: "Image processing error",
+          message: processingError instanceof Error ? processingError.message : "Failed to process image",
+          description: "Create a 3D model based on the uploaded image."
         },
-      ],
-      max_tokens: 400,
-    })
-
-    // Extract the generated description
-    const description = response.choices[0]?.message?.content || ""
-    
-    console.log(`✅ [analyze-image] Generated description (${description.length} chars): "${description}"`);
-
-    const responseJson = { description };
-    console.log(`🔍 [analyze-image] Sending response with status 200: ${JSON.stringify(responseJson)}`);
-    
-    return NextResponse.json(responseJson, { headers: corsHeaders })
+        { status: 200, headers: corsHeaders }
+      );
+    }
   } catch (error) {
-    console.error("❌ [analyze-image] Error analyzing image:", error)
-    const errorMessage = error instanceof Error ? error.message : "Failed to analyze image";
-    console.error(`❌ [analyze-image] Error details: ${errorMessage}`);
-    
-    const fallbackDescription = "Create a 3D model based on the uploaded image.";
-    console.log(`🔍 [analyze-image] Using fallback description: "${fallbackDescription}"`);
-    
+    console.error("❌ [SERVER] Unexpected error in analyze-image route:", error);
     return NextResponse.json(
       { 
-        error: errorMessage,
-        description: fallbackDescription // Provide a fallback description even on error
+        error: error instanceof Error ? error.message : "Failed to analyze image",
+        description: "Create a 3D model based on the uploaded image." 
       },
       { 
-        status: 500,
+        status: 200,
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
           'Access-Control-Allow-Headers': 'Content-Type, Authorization',
         }
       }
-    )
+    );
   }
 }
 
 // Keep the OPTIONS method handler for CORS preflight requests
 export async function OPTIONS(request: Request) {
-  console.log("🔍 [analyze-image] Received OPTIONS request for CORS preflight");
-  
+  console.log("🔍 [SERVER] /api/analyze-image OPTIONS request received");
   return NextResponse.json(
     { success: true },
     { 
