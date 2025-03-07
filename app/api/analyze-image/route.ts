@@ -15,6 +15,13 @@ const openai = new OpenAI({
 
 export async function POST(request: Request) {
   try {
+    console.log("🔍 [analyze-image] Received image analysis request");
+    
+    // Log request URL and hostname for debugging
+    const url = new URL(request.url);
+    console.log(`🔍 [analyze-image] Request URL: ${url.toString()}`);
+    console.log(`🔍 [analyze-image] Hostname: ${url.hostname}`);
+    
     // Add CORS headers for all responses to ensure this works when embedded on fishcad.com
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
@@ -43,7 +50,7 @@ export async function POST(request: Request) {
     // }
     
     if (!process.env.OPENAI_API_KEY) {
-      console.error("OPENAI_API_KEY not found in environment variables");
+      console.error("❌ [analyze-image] OPENAI_API_KEY not found in environment variables");
       return NextResponse.json(
         { 
           error: "OpenAI API key not configured",
@@ -56,18 +63,21 @@ export async function POST(request: Request) {
       );
     }
     
+    console.log("✅ [analyze-image] OPENAI_API_KEY found, proceeding with analysis");
+    
     const formData = await request.formData()
     const imageFile = formData.get("image") as File
     const textPrompt = formData.get("prompt") as string
     
     if (!imageFile) {
+      console.error("❌ [analyze-image] No image file provided in request");
       return NextResponse.json(
         { error: "Image file is required" },
         { status: 400, headers: corsHeaders }
       )
     }
 
-    console.log("Analyzing image with text prompt:", textPrompt || "[No additional prompt]");
+    console.log(`🔍 [analyze-image] Analyzing image (size: ${Math.round(imageFile.size / 1024)}KB) with text prompt: ${textPrompt || "[No additional prompt]"}`);
     
     // Convert the file to base64
     const arrayBuffer = await imageFile.arrayBuffer()
@@ -75,10 +85,14 @@ export async function POST(request: Request) {
     const base64Image = buffer.toString("base64")
     const dataUri = `data:${imageFile.type};base64,${base64Image}`
     
+    console.log(`🔍 [analyze-image] Image converted to base64 (length: ${base64Image.length} chars)`);
+    
     // Construct prompt for Vision API - optimized for Tripo compatibility
     const userPrompt = textPrompt 
       ? `Look at this image and create a simple, clear description (no more than 3-4 sentences) of what 3D model should be created from it. ${textPrompt}` 
       : "Look at this image and create a simple, clear description (no more than 3-4 sentences) of what 3D model should be created from it. Focus on the main object or character.";
+    
+    console.log("🔍 [analyze-image] Calling OpenAI Vision API...");
     
     // Call OpenAI Vision API with instructions for a concise description
     const response = await openai.chat.completions.create({
@@ -107,15 +121,24 @@ export async function POST(request: Request) {
     // Extract the generated description
     const description = response.choices[0]?.message?.content || ""
     
-    console.log("Generated description:", description);
+    console.log(`✅ [analyze-image] Generated description (${description.length} chars): "${description}"`);
 
-    return NextResponse.json({ description }, { headers: corsHeaders })
+    const responseJson = { description };
+    console.log(`🔍 [analyze-image] Sending response with status 200: ${JSON.stringify(responseJson)}`);
+    
+    return NextResponse.json(responseJson, { headers: corsHeaders })
   } catch (error) {
-    console.error("Error analyzing image:", error)
+    console.error("❌ [analyze-image] Error analyzing image:", error)
+    const errorMessage = error instanceof Error ? error.message : "Failed to analyze image";
+    console.error(`❌ [analyze-image] Error details: ${errorMessage}`);
+    
+    const fallbackDescription = "Create a 3D model based on the uploaded image.";
+    console.log(`🔍 [analyze-image] Using fallback description: "${fallbackDescription}"`);
+    
     return NextResponse.json(
       { 
-        error: error instanceof Error ? error.message : "Failed to analyze image",
-        description: "Create a 3D model based on the uploaded image." // Provide a fallback description even on error
+        error: errorMessage,
+        description: fallbackDescription // Provide a fallback description even on error
       },
       { 
         status: 500,
@@ -131,6 +154,8 @@ export async function POST(request: Request) {
 
 // Keep the OPTIONS method handler for CORS preflight requests
 export async function OPTIONS(request: Request) {
+  console.log("🔍 [analyze-image] Received OPTIONS request for CORS preflight");
+  
   return NextResponse.json(
     { success: true },
     { 

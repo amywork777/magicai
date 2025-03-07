@@ -2,40 +2,39 @@ import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
   try {
-    const taskId = request.nextUrl.searchParams.get("taskId")
+    // Extract task ID from query parameters
+    const { searchParams } = new URL(request.url)
+    const taskId = searchParams.get("taskId")
 
+    console.log(`🔍 [task-status] Checking status for task ID: ${taskId}`);
+    
     if (!taskId) {
+      console.error(`❌ [task-status] No task ID provided in request`);
       return NextResponse.json({ error: "Task ID is required" }, { status: 400 })
     }
 
-    // Call Tripo API to get task status
-    const tripoResponse = await fetch(`https://api.tripo3d.ai/v2/openapi/task/${taskId}`, {
+    // Call Tripo API to check task status
+    const tripoResponse = await fetch(`https://api.tripo3d.ai/v2/openapi/task?task_id=${taskId}`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${process.env.TRIPO_API_KEY}`,
       },
     })
 
+    console.log(`🔍 [task-status] Tripo API status response: ${tripoResponse.status} ${tripoResponse.statusText}`);
+    
     if (!tripoResponse.ok) {
       const errorData = await tripoResponse.json()
-      console.error("Tripo API error:", errorData)
+      console.error(`❌ [task-status] Tripo API error:`, errorData);
       return NextResponse.json({ error: "Failed to get task status" }, { status: tripoResponse.status })
     }
 
     const data = await tripoResponse.json()
     const taskData = data.data
-
-    console.log("Task status:", taskData.status)
-    console.log("Task progress:", taskData.progress || 0)
-
-    // Improved logging for debugging
-    if (taskData.status === "success") {
-      // Use optional chaining to avoid errors if properties are undefined
-      console.log("Model URL:", taskData.output?.model || "undefined")
-      console.log("Base model URL:", taskData.output?.base_model || "undefined")
-    }
-
-    // Handle model URL carefully
+    
+    console.log(`🔍 [task-status] Task status: ${taskData.status}, progress: ${taskData.progress || 0}%`);
+    
+    // Extract model URLs for completed tasks
     let finalModelUrl = null;
     let baseModelUrl = null;
     
@@ -44,16 +43,19 @@ export async function GET(request: NextRequest) {
       finalModelUrl = taskData.output.model || null;
       baseModelUrl = taskData.output.base_model || null;
       
+      console.log(`🔍 [task-status] Final model URL: ${finalModelUrl || 'not available'}`);
+      console.log(`🔍 [task-status] Base model URL: ${baseModelUrl || 'not available'}`);
+      
       // Use base_model if available and model isn't, or use whichever is available
       if (!finalModelUrl && baseModelUrl) {
-        console.log("Using base_model URL for model display:", baseModelUrl);
+        console.log(`✅ [task-status] Using base_model URL for model display: ${baseModelUrl}`);
         finalModelUrl = baseModelUrl;
       }
       
       if (!finalModelUrl && !baseModelUrl) {
-        console.warn("No model URLs found in task output:", taskData.output);
+        console.warn(`⚠️ [task-status] No model URLs found in task output:`, taskData.output);
       } else {
-        console.log("Using model URL:", finalModelUrl || baseModelUrl);
+        console.log(`✅ [task-status] Using model URL: ${finalModelUrl || baseModelUrl}`);
       }
     }
 
@@ -65,10 +67,12 @@ export async function GET(request: NextRequest) {
       baseModelUrl: baseModelUrl, // Also return baseModelUrl separately
       renderedImage: taskData.status === "success" ? taskData.output?.rendered_image : null,
     }
+    
+    console.log(`🔍 [task-status] Sending response:`, response);
 
     return NextResponse.json(response)
   } catch (error) {
-    console.error("Error getting task status:", error)
+    console.error(`❌ [task-status] Error getting task status:`, error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

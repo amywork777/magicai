@@ -417,19 +417,26 @@ export function ModelGenerator() {
           title: "Analyzing Image",
           description: "Using AI to analyze your image...",
         })
+        
+        console.log(`🔍 [CLIENT] Starting image analysis for ${selectedImageTextFile.name} (size: ${Math.round(selectedImageTextFile.size / 1024)}KB)`);
+        console.log(`🔍 [CLIENT] Current hostname: ${window.location.hostname}`);
 
         const analysisResponse = await fetch("/api/analyze-image", {
           method: "POST",
           body: formData,
         })
+        
+        console.log(`🔍 [CLIENT] Image analysis response status: ${analysisResponse.status} ${analysisResponse.statusText}`);
 
         // Always try to read the response body regardless of status code
         const analysisData = await analysisResponse.json();
+        
+        console.log(`🔍 [CLIENT] Image analysis response data:`, analysisData);
 
         // Use the description from the response if available, even if it's an error response
         if (analysisData.description) {
           description = analysisData.description;
-          console.log("Using description from API response:", description);
+          console.log(`✅ [CLIENT] Using description from API: "${description}"`);
           
           toast({
             title: analysisResponse.ok ? "Image Analyzed" : "Using Fallback Description",

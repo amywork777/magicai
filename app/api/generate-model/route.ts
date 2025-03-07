@@ -20,16 +20,25 @@ const cleanDescription = (description: string): string => {
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("🔍 [generate-model] Received model generation request");
+    
     const body = await request.json()
     const { type, prompt, imageToken } = body
+    
+    console.log(`🔍 [generate-model] Request type: ${type}, imageToken: ${imageToken ? "provided" : "not provided"}`);
+    console.log(`🔍 [generate-model] Prompt: "${prompt}"`);
 
     // If prompt is very long (likely from OpenAI Vision API), clean it up
     const processedPrompt = prompt && prompt.length > 200 
       ? cleanDescription(prompt)
       : prompt;
     
-    console.log("Original prompt length:", prompt?.length || 0);
-    console.log("Processed prompt length:", processedPrompt?.length || 0);
+    console.log(`🔍 [generate-model] Original prompt length: ${prompt?.length || 0}`);
+    console.log(`🔍 [generate-model] Processed prompt length: ${processedPrompt?.length || 0}`);
+    
+    if (processedPrompt !== prompt) {
+      console.log(`🔍 [generate-model] Prompt was processed/cleaned`);
+    }
     
     let requestBody
 
@@ -43,6 +52,7 @@ export async function POST(request: NextRequest) {
         pbr: false, // Disable PBR
         auto_size: true, // Enable auto-sizing for better proportions
       }
+      console.log(`🔍 [generate-model] Using text-to-model generation strategy`);
     } else if (type === "image") {
       // Image to model - without textures
       requestBody = {
@@ -56,11 +66,13 @@ export async function POST(request: NextRequest) {
         pbr: false, // Disable PBR
         auto_size: true, // Enable auto-sizing for better proportions
       }
+      console.log(`🔍 [generate-model] Using image-to-model generation strategy with token: ${imageToken}`);
     } else {
+      console.error(`❌ [generate-model] Invalid generation type: ${type}`);
       return NextResponse.json({ error: "Invalid generation type" }, { status: 400 })
     }
 
-    console.log("Sending request to Tripo API:", requestBody)
+    console.log(`🔍 [generate-model] Sending request to Tripo API:`, requestBody);
 
     // Call Tripo API to start model generation
     const tripoResponse = await fetch("https://api.tripo3d.ai/v2/openapi/task", {
@@ -72,20 +84,30 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(requestBody),
     })
 
+    console.log(`🔍 [generate-model] Tripo API response status: ${tripoResponse.status} ${tripoResponse.statusText}`);
+
     if (!tripoResponse.ok) {
       const errorData = await tripoResponse.json()
-      console.error("Tripo API error:", errorData)
+      console.error(`❌ [generate-model] Tripo API error:`, errorData)
       return NextResponse.json({ error: "Failed to start model generation" }, { status: tripoResponse.status })
     }
 
     const data = await tripoResponse.json()
-    console.log("Tripo API response:", data)
+    console.log(`✅ [generate-model] Tripo API success response:`, data);
+    
+    let responseData;
+    
+    if (data.data?.task_id) {
+      responseData = { taskId: data.data.task_id };
+      console.log(`✅ [generate-model] Task created with ID: ${data.data.task_id}`);
+    } else {
+      console.error(`❌ [generate-model] No task ID in response:`, data);
+      return NextResponse.json({ error: "No task ID returned from Tripo API" }, { status: 500 })
+    }
 
-    return NextResponse.json({
-      taskId: data.data.task_id,
-    })
+    return NextResponse.json(responseData)
   } catch (error) {
-    console.error("Error generating model:", error)
+    console.error(`❌ [generate-model] Error generating model:`, error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }
