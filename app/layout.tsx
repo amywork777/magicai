@@ -2,6 +2,8 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
+import { ThemeProvider } from "@/components/theme-provider"
+import TaiyakiProvider from "@/components/taiyaki-provider"
 
 // Initialize Inter font with latin subset
 const inter = Inter({ 
@@ -24,7 +26,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable}`}>
-      <body className={`${inter.className} bg-white`}>{children}</body>
+      <body className={`${inter.className} bg-white`}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <TaiyakiProvider />
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   )
 }
