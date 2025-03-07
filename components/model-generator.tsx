@@ -208,6 +208,18 @@ export function ModelGenerator() {
         generatedAt: new Date().toISOString()
       };
       
+      // Check the size of the STL blob
+      console.log(`STL blob size: ${stlBlob.size} bytes`);
+      
+      // If the blob is larger than 5MB, show a warning
+      if (stlBlob.size > 5 * 1024 * 1024) {
+        console.warn("Large STL file (>5MB) may have issues with cross-origin transfer");
+        toast({
+          title: "Large File Warning",
+          description: "Your STL file is large, which might cause transfer issues.",
+        });
+      }
+      
       // Convert the STL blob to a base64 string
       const reader = new FileReader();
       reader.readAsDataURL(stlBlob);
@@ -215,22 +227,53 @@ export function ModelGenerator() {
       reader.onload = () => {
         // The result is a data URL that includes the base64-encoded data
         const base64Data = reader.result as string;
+        console.log(`Base64 data length: ${base64Data.length} characters`);
         
         // Log sending message to FISHCAD
-        console.log("Sending STL model to FISHCAD...");
+        console.log("Sending STL model to FISHCAD with enhanced compatibility...");
         
-        // Send message to FISHCAD with the STL model data
+        // Try different message formats that FISHCAD might expect
+        
+        // Format 1: Original format with stlData
         window.parent.postMessage({
           type: "stl-import",
           stlData: base64Data,
           fileName: "magicfish-generated-model.stl",
           metadata
-        }, "*"); // In production, replace "*" with "https://fishcad.com"
+        }, "*");
+        
+        // Format 2: Alternative format with data property
+        setTimeout(() => {
+          window.parent.postMessage({
+            type: "stl-import",
+            data: base64Data,
+            fileName: "magicfish-generated-model.stl",
+            metadata
+          }, "*");
+        }, 100);
+        
+        // Format 3: Simple format with minimal data
+        setTimeout(() => {
+          window.parent.postMessage({
+            type: "stl-import",
+            stl: base64Data,
+            name: "magicfish-generated-model.stl"
+          }, "*");
+        }, 200);
         
         toast({
           title: "Sending to FishCAD",
           description: "Your model is being sent to FishCAD...",
         });
+        
+        // After a delay, show a message suggesting to check FISHCAD
+        setTimeout(() => {
+          toast({
+            title: "Transfer Attempted",
+            description: "Check FISHCAD to see if your model was received. If not, try downloading and importing manually.",
+            duration: 5000,
+          });
+        }, 3000);
       };
       
       reader.onerror = (error) => {
@@ -242,10 +285,14 @@ export function ModelGenerator() {
         });
       };
       
-      // Set up a listener for responses from FISHCAD
+      // Set up a listener for responses from FISHCAD with enhanced debugging
       const responseHandler = (event: MessageEvent) => {
+        console.log("Received message:", event.data);
+        
         // Check if this is a response from FISHCAD
-        if (event.data && event.data.type === 'stl-import-response') {
+        if (event.data && (event.data.type === 'stl-import-response' || event.data.action === 'stl-import-response')) {
+          console.log("FISHCAD response received:", event.data);
+          
           if (event.data.success) {
             toast({
               title: "Import Successful!",
@@ -283,7 +330,7 @@ export function ModelGenerator() {
       console.error('Error sending to FishCAD:', error);
       toast({
         title: "Send Failed",
-        description: "Failed to send to FishCAD. Please try again.",
+        description: "Failed to send to FishCAD. Please try again or download and import manually.",
         variant: "destructive",
       });
     }

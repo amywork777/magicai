@@ -134,6 +134,10 @@ export function addFishcadButtons() {
 // When a button is clicked, fetch the STL file and send it as base64 data
 const fetchAndSendStlFile = async (url: string, fileName: string, metadata: FileMetadata, button: HTMLElement) => {
   try {
+    // Update button to sending state
+    button.textContent = ButtonState.SENDING;
+    Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sending);
+    
     // Fetch the STL file
     const response = await fetch(url);
     if (!response.ok) {
@@ -142,6 +146,7 @@ const fetchAndSendStlFile = async (url: string, fileName: string, metadata: File
     
     // Get the STL file as a blob
     const blob = await response.blob();
+    console.log(`STL blob size: ${blob.size} bytes`);
     
     // Convert the blob to base64
     const reader = new FileReader();
@@ -150,18 +155,39 @@ const fetchAndSendStlFile = async (url: string, fileName: string, metadata: File
     reader.onload = () => {
       // Get the base64 data
       const base64Data = reader.result as string;
+      console.log(`Base64 data length: ${base64Data.length} characters`);
       
-      // Update button to sending state
-      button.textContent = ButtonState.SENDING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sending);
+      // Log sending message
+      console.log("Sending STL model to FISHCAD with enhanced compatibility...");
       
-      // Send the message to FISHCAD
+      // Try different message formats that FISHCAD might expect
+      
+      // Format 1: Original format with stlData
       window.parent.postMessage({
         type: "stl-import",
         stlData: base64Data,
         fileName,
         metadata
-      }, "*"); // In production, replace "*" with "https://fishcad.com"
+      }, "*");
+      
+      // Format 2: Alternative format with data property
+      setTimeout(() => {
+        window.parent.postMessage({
+          type: "stl-import",
+          data: base64Data,
+          fileName,
+          metadata
+        }, "*");
+      }, 100);
+      
+      // Format 3: Simple format with minimal data
+      setTimeout(() => {
+        window.parent.postMessage({
+          type: "stl-import",
+          stl: base64Data,
+          name: fileName
+        }, "*");
+      }, 200);
       
       // Update button after delay
       setTimeout(() => {
@@ -212,16 +238,36 @@ export function handleResponseFromFishcad(event: MessageEvent) {
   // if (event.origin !== 'https://fishcad.com') return;
   
   const data = event.data;
+  console.log("Received message in Taiyaki integration:", data);
   
-  // Check if the message is a response from FISHCAD
-  if (data && data.type === 'stl-import-response') {
-    console.log("Received response from FISHCAD:", data);
+  // Check if the message is a response from FISHCAD (handle multiple possible formats)
+  if (data && 
+      (data.type === 'stl-import-response' || 
+       data.action === 'stl-import-response' || 
+       data.type === 'import-response' || 
+       (data.type === 'response' && data.for === 'stl-import'))) {
     
-    // Find the button associated with the file
+    console.log("FISHCAD response received in Taiyaki integration:", data);
+    
+    // Find all buttons that might match
     const buttons = document.querySelectorAll('.fishcad-button');
-    const button = Array.from(buttons).find(
-      btn => (btn as HTMLElement).dataset.fileName === data.fileName
-    ) as HTMLElement | undefined;
+    let button: HTMLElement | undefined;
+    
+    // Try to find matching button by fileName
+    if (data.fileName) {
+      button = Array.from(buttons).find(
+        btn => (btn as HTMLElement).dataset.fileName === data.fileName
+      ) as HTMLElement | undefined;
+    }
+    
+    // If no button found by fileName, just use the last one that was clicked
+    if (!button && buttons.length > 0) {
+      // Use the most recently used button
+      const buttonsArray = Array.from(buttons) as HTMLElement[];
+      button = buttonsArray.find(btn => 
+        btn.textContent === ButtonState.SENDING
+      ) || buttonsArray[buttonsArray.length - 1];
+    }
     
     if (button) {
       if (data.success) {
