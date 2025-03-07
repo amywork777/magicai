@@ -106,7 +106,7 @@ export function addFishcadButtons() {
     
     // Create new button
     const button = document.createElement('button');
-    button.textContent = ButtonState.READY;
+    button.textContent = "Open in FISHCAD";
     button.classList.add('fishcad-button');
     button.dataset.stlUrl = link.href;
     
@@ -127,74 +127,31 @@ export function addFishcadButtons() {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       
-      // Disable button and update state
-      button.disabled = true;
-      button.textContent = ButtonState.REQUESTING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.requesting);
-      
       // Get STL URL
       const stlUrl = link.href;
       
-      // Gather metadata
-      const baseMetadata = extractPageMetadata();
-      const metadata: FileMetadata = {
-        ...baseMetadata,
-        title: fileName,
-      };
+      // Store import details in localStorage
+      localStorage.setItem('fishcad_pending_import', JSON.stringify({
+        fileName: fileName,
+        source: window.location.hostname,
+        timestamp: Date.now()
+      }));
       
-      try {
-        // Generate unique request ID
-        const requestId = generateRequestId();
+      // Trigger download of the STL file
+      const downloadLink = document.createElement('a');
+      downloadLink.href = stlUrl;
+      downloadLink.download = fileName; // Force download
+      downloadLink.style.display = 'none';
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      
+      // Clean up the download link
+      setTimeout(() => {
+        document.body.removeChild(downloadLink);
         
-        // Store reference to button for later updates
-        activeImports.set(requestId, {
-          button,
-          stlUrl,
-          fileName,
-          startTime: Date.now()
-        });
-        
-        // Check if we're in an iframe and can access parent
-        const inIframe = window !== window.parent;
-        
-        if (inIframe) {
-          // Try parent communication first (proxy approach)
-          console.log(`Sending proxy request to parent window for ${fileName}`);
-          
-          window.parent.postMessage({
-            type: "stl-proxy-request",
-            requestId,
-            stlUrl,
-            fileName,
-            metadata
-          }, "*"); // In production, replace "*" with "https://fishcad.com"
-          
-          // Set timeout to fall back to direct method after 5 seconds
-          setTimeout(() => {
-            const importData = activeImports.get(requestId);
-            if (importData && importData.status !== 'completed') {
-              // If still not completed, try direct server approach
-              sendDirectServerRequest(requestId, stlUrl, fileName, metadata);
-            }
-          }, 5000);
-        } else {
-          // Direct server communication
-          sendDirectServerRequest(requestId, stlUrl, fileName, metadata);
-        }
-      } catch (error) {
-        console.error('Error requesting STL import:', error);
-        
-        // Show error and reset button
-        button.textContent = ButtonState.ERROR;
-        Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
-        button.disabled = false;
-        
-        // Reset after delay
-        setTimeout(() => {
-          button.textContent = ButtonState.READY;
-          Object.assign(button.style, BUTTON_STYLES.default);
-        }, 3000);
-      }
+        // Redirect to FISHCAD with special parameter
+        window.location.href = "https://fishcad.com/import?pending=true";
+      }, 100); // Short delay to ensure download starts
     });
     
     // Insert button after link
