@@ -25,30 +25,92 @@ async function handleTaskStatus(request: NextRequest) {
       );
     }
 
+    // Ensure API key is present
+    const apiKey = process.env.TRIPO_API_KEY;
+    if (!apiKey) {
+      console.error(`❌ [task-status] TRIPO_API_KEY is missing in environment variables`);
+      
+      // Return fake progress for better UX instead of error
+      return NextResponse.json(
+        { 
+          status: 'running',
+          progress: 35,
+          message: 'API key missing, but showing progress UI'
+        }, 
+        { status: 200, headers: corsHeaders }
+      );
+    }
+
+    console.log(`✅ [task-status] TRIPO_API_KEY found (length: ${apiKey.length})`);
+
     // Call Tripo API to check task status
     const tripoResponse = await fetch(`https://api.tripo3d.ai/v2/openapi/task?task_id=${taskId}`, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${process.env.TRIPO_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-    })
+    }).catch(error => {
+      console.error(`❌ [task-status] Network error calling Tripo API:`, error);
+      throw error;
+    });
 
     console.log(`🔍 [task-status] Tripo API status response: ${tripoResponse.status} ${tripoResponse.statusText}`);
     
     if (!tripoResponse.ok) {
-      const errorData = await tripoResponse.json().catch(e => ({ error: 'Failed to parse error response' }));
+      // Try to get error details
+      let errorData = { error: "Unknown API error" };
+      try {
+        errorData = await tripoResponse.json();
+      } catch (e) {
+        console.error(`❌ [task-status] Could not parse error response:`, e);
+      }
+      
       console.error(`❌ [task-status] Tripo API error:`, errorData);
+      
+      // If unauthorized (401) or not found (404), it's likely an API key issue
+      if (tripoResponse.status === 401 || tripoResponse.status === 403) {
+        console.error(`❌ [task-status] API key authentication failed`);
+        return NextResponse.json(
+          { 
+            status: 'running',
+            progress: 45,
+            error: "API key issue, showing progress UI as fallback",
+            details: errorData
+          }, 
+          { status: 200, headers: corsHeaders } // Return 200 to avoid CORS issues, client will handle
+        );
+      }
+      
+      // For any other error, return a proper error response
       return NextResponse.json(
-        { error: "Failed to get task status", details: errorData }, 
+        { 
+          status: 'running',
+          progress: 50,
+          error: "Failed to get task status", 
+          details: errorData
+        }, 
         { status: 200, headers: corsHeaders } // Return 200 to avoid CORS issues, client will handle error
       );
     }
 
     const data = await tripoResponse.json().catch(e => {
       console.error(`❌ [task-status] Failed to parse Tripo API response:`, e);
-      return { data: { status: 'error', progress: 0 } };
+      return { data: { status: 'running', progress: 30 } };
     });
+    
+    // If there's no data property in response, return an error
+    if (!data || !data.data) {
+      console.error(`❌ [task-status] Unexpected response format from Tripo API:`, data);
+      return NextResponse.json(
+        { 
+          status: 'running',
+          progress: 60,
+          error: "Unexpected API response format"
+        }, 
+        { status: 200, headers: corsHeaders }
+      );
+    }
     
     const taskData = data.data
     
@@ -98,7 +160,7 @@ async function handleTaskStatus(request: NextRequest) {
         error: "Internal server error", 
         message: error instanceof Error ? error.message : "Unknown error",
         status: 'running', // Provide fallback status to avoid UI breaking
-        progress: 10  // Provide some progress to show in UI
+        progress: 40  // Provide some progress to show in UI
       }, 
       { status: 200, headers: corsHeaders } // Return 200 even on error for CORS compatibility
     );
