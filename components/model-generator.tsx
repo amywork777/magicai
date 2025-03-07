@@ -404,54 +404,113 @@ export function ModelGenerator() {
       setStlBlob(null)
       setStlUrl(null)
 
-      // First analyze the image with OpenAI Vision API
-      const formData = new FormData()
-      formData.append("image", selectedImageTextFile)
-      formData.append("prompt", imageTextPrompt || "")
+      let description = "";
 
-      toast({
-        title: "Analyzing Image",
-        description: "Using AI to analyze your image...",
-      })
+      try {
+        // First analyze the image with OpenAI Vision API
+        const formData = new FormData()
+        formData.append("image", selectedImageTextFile)
+        formData.append("prompt", imageTextPrompt || "")
 
-      const analysisResponse = await fetch("/api/analyze-image", {
+        toast({
+          title: "Analyzing Image",
+          description: "Using AI to analyze your image...",
+        })
+
+        const analysisResponse = await fetch("/api/analyze-image", {
+          method: "POST",
+          body: formData,
+        })
+
+        if (analysisResponse.ok) {
+          const analysisData = await analysisResponse.json()
+          
+          if (analysisData.description) {
+            description = analysisData.description;
+            console.log("AI Generated Description:", description);
+            
+            toast({
+              title: "Image Analyzed",
+              description: "Creating 3D model based on the AI analysis...",
+            });
+          }
+        } else {
+          console.warn("Image analysis failed, falling back to direct prompt");
+          // If analysis fails, use the user's input text or a generic description
+          description = imageTextPrompt || 
+            `Create a 3D model based on the uploaded image. ${
+              selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
+            }`;
+            
+          toast({
+            title: "Image Analysis Unavailable",
+            description: "Using direct prompt instead. The AI enhancement feature requires additional setup.",
+          });
+        }
+      } catch (error) {
+        console.warn("Error during image analysis:", error);
+        // Fallback to direct text description if analysis fails
+        description = imageTextPrompt || 
+          `Create a 3D model based on the uploaded image. ${
+            selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
+          }`;
+          
+        toast({
+          title: "Image Analysis Unavailable",
+          description: "Using direct prompt instead. This feature requires OpenAI API setup.",
+        });
+      }
+
+      setIsAnalyzingImage(false);
+      
+      // Ensure we have some description to send
+      if (!description) {
+        description = `Create a 3D model based on the uploaded image. ${
+          selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
+        }`;
+      }
+
+      // Try to upload the image first (this should work in both environments)
+      const imageFormData = new FormData();
+      imageFormData.append("file", selectedImageTextFile);
+
+      const uploadResponse = await fetch("/api/upload-image", {
         method: "POST",
-        body: formData,
-      })
-
-      if (!analysisResponse.ok) {
-        const errorData = await analysisResponse.json();
-        console.error("Analysis API error:", errorData);
-        throw new Error("Failed to analyze image: " + (errorData.error || "Unknown error"));
-      }
-
-      const analysisData = await analysisResponse.json()
-      setIsAnalyzingImage(false)
-      
-      if (!analysisData.description) {
-        throw new Error("Failed to generate description from image")
-      }
-
-      // Log the description we got from OpenAI Vision
-      console.log("AI Generated Description:", analysisData.description);
-      
-      toast({
-        title: "Image Analyzed",
-        description: "Creating 3D model based on the AI analysis...",
+        body: imageFormData,
       });
 
-      // Then start the text-to-model generation with the AI-generated description
-      setStatus("generating")
+      if (!uploadResponse.ok) {
+        throw new Error("Failed to upload image");
+      }
+
+      const uploadData = await uploadResponse.json();
+      
+      // Then start the model generation using the image token and text description
+      setStatus("generating");
+      
+      // Determine whether to use image-to-model or text-to-model based on what was successful
+      const generationType = uploadData.imageToken ? "image" : "text";
+      
+      const generationPayload: {
+        type: string;
+        prompt: string;
+        imageToken?: string;
+      } = {
+        type: generationType,
+        prompt: description,
+      };
+      
+      if (generationType === "image") {
+        generationPayload.imageToken = uploadData.imageToken;
+      }
+      
       const generationResponse = await fetch("/api/generate-model", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          type: "text",
-          prompt: analysisData.description,
-        }),
-      })
+        body: JSON.stringify(generationPayload),
+      });
 
       if (!generationResponse.ok) {
         const errorData = await generationResponse.json();
@@ -459,28 +518,28 @@ export function ModelGenerator() {
         throw new Error("Failed to start model generation: " + (errorData.error || "Unknown error"));
       }
 
-      const generationData = await generationResponse.json()
+      const generationData = await generationResponse.json();
       
       if (!generationData.taskId) {
         throw new Error("No task ID returned from generation API");
       }
       
-      setTaskId(generationData.taskId)
+      setTaskId(generationData.taskId);
 
       // Start polling for task status
-      pollTaskStatus(generationData.taskId)
+      pollTaskStatus(generationData.taskId);
     } catch (error) {
-      console.error("Error processing image and text:", error)
-      setStatus("error")
-      setIsGenerating(false)
-      setIsAnalyzingImage(false)
+      console.error("Error processing image and text:", error);
+      setStatus("error");
+      setIsGenerating(false);
+      setIsAnalyzingImage(false);
       toast({
         title: "Error",
         description: typeof error === 'object' && error !== null && 'message' in error 
           ? String(error.message) 
           : "Failed to process image and generate model. Please try again.",
         variant: "destructive",
-      })
+      });
     }
   }
 
@@ -645,124 +704,149 @@ export function ModelGenerator() {
     }
   }
 
-  // Setup the STL viewer when stlUrl changes
+  // Update the STL viewer when the STL URL changes
   useEffect(() => {
     if (!stlUrl || !stlViewerRef) return;
-    
-    // Clean up previous viewer if it exists
-    while (stlViewerRef.firstChild) {
-      stlViewerRef.removeChild(stlViewerRef.firstChild);
-    }
-    
-    // Create the Three.js scene, camera, and renderer
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf5f5f5);
-    
-    const camera = new THREE.PerspectiveCamera(
-      75, 
-      stlViewerRef.clientWidth / stlViewerRef.clientHeight, 
-      0.1, 
-      1000
-    );
-    camera.position.set(0, 0, 5);
-    
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(stlViewerRef.clientWidth, stlViewerRef.clientHeight);
-    stlViewerRef.appendChild(renderer.domElement);
-    
-    // Add lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-    
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(1, 1, 1);
-    scene.add(directionalLight);
-    
-    const backLight = new THREE.DirectionalLight(0xffffff, 0.4);
-    backLight.position.set(-1, -1, -1);
-    scene.add(backLight);
-    
-    // Add orbit controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.25;
-    
-    // Create material for the STL model
-    const material = new THREE.MeshPhongMaterial({
-      color: 0x3a86ff,
-      specular: 0x111111,
-      shininess: 100,
-    });
-    
-    // Load the STL file
-    const loader = new STLLoader();
-    
-    loader.load(
-      stlUrl,
-      (geometry) => {
-        // Center the model
-        geometry.center();
-        
-        const mesh = new THREE.Mesh(geometry, material);
-        
-        // Auto-scale the model to fit in view
-        const box = new THREE.Box3().setFromObject(mesh);
-        const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const scale = 3 / maxDim;
-        mesh.scale.set(scale, scale, scale);
-        
-        scene.add(mesh);
-        
-        // Adjust camera to focus on the model
-        controls.update();
-      },
-      (xhr) => {
-        // Loading progress
-        console.log((xhr.loaded / xhr.total) * 100 + '% loaded');
-      },
-      (error) => {
-        console.error('An error occurred loading the STL:', error);
+
+    let scene: THREE.Scene;
+    let camera: THREE.PerspectiveCamera;
+    let renderer: THREE.WebGLRenderer;
+    let controls: OrbitControls;
+    let material: THREE.Material;
+    let mesh: THREE.Mesh;
+    let animationId: number;
+
+    // Set up the scene
+    const setupScene = () => {
+      // Create scene
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf5f5f5);
+
+      // Set up camera
+      const width = stlViewerRef.clientWidth;
+      const height = stlViewerRef.clientHeight;
+      camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+      camera.position.set(0, 0, 10);
+
+      // Create renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      
+      if (stlViewerRef.firstChild) {
+        stlViewerRef.removeChild(stlViewerRef.firstChild);
       }
-    );
-    
+      stlViewerRef.appendChild(renderer.domElement);
+
+      // Add orbit controls
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.2;
+      controls.rotateSpeed = 0.7;
+      controls.enableZoom = true;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.5;
+
+      // Add lighting for better shininess
+      // Main directional light (like sunlight)
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight.position.set(1, 1, 1);
+      directionalLight.castShadow = true;
+      directionalLight.shadow.mapSize.width = 1024;
+      directionalLight.shadow.mapSize.height = 1024;
+      scene.add(directionalLight);
+
+      // Add ambient light for overall illumination
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+      scene.add(ambientLight);
+
+      // Add a hemisphere light for natural lighting
+      const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.3);
+      scene.add(hemisphereLight);
+
+      // Add point lights for highlights
+      const pointLight1 = new THREE.PointLight(0xffffff, 0.8);
+      pointLight1.position.set(-5, 5, 5);
+      scene.add(pointLight1);
+
+      const pointLight2 = new THREE.PointLight(0xffffff, 0.8);
+      pointLight2.position.set(5, -5, 5);
+      scene.add(pointLight2);
+
+      // Load the STL model
+      const loader = new STLLoader();
+      loader.load(stlUrl, (geometry) => {
+        // Center the geometry
+        geometry.center();
+
+        // Scale the geometry to fit the viewer
+        const boundingBox = new THREE.Box3().setFromObject(new THREE.Mesh(geometry));
+        const size = boundingBox.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const scale = 5 / maxDim;
+        geometry.scale(scale, scale, scale);
+
+        // Create a shinier material
+        material = new THREE.MeshStandardMaterial({
+          color: 0x6495ED,
+          metalness: 0.25,
+          roughness: 0.3,
+          envMapIntensity: 0.8,
+          flatShading: false,
+        });
+
+        // Create the mesh and add it to the scene
+        mesh = new THREE.Mesh(geometry, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        scene.add(mesh);
+
+        // Position camera to view the model
+        const boundingSphere = geometry.boundingSphere;
+        if (boundingSphere) {
+          const center = boundingSphere.center;
+          const radius = boundingSphere.radius;
+          camera.position.set(center.x, center.y, center.z + radius * 2.5);
+          controls.target.set(center.x, center.y, center.z);
+          controls.update();
+        }
+      });
+    };
+
     // Animation loop
     const animate = () => {
-      requestAnimationFrame(animate);
+      animationId = requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
     };
-    
-    animate();
-    
+
     // Handle window resize
     const handleResize = () => {
       if (!stlViewerRef) return;
+      const width = stlViewerRef.clientWidth;
+      const height = stlViewerRef.clientHeight;
       
-      camera.aspect = stlViewerRef.clientWidth / stlViewerRef.clientHeight;
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(stlViewerRef.clientWidth, stlViewerRef.clientHeight);
+      renderer.setSize(width, height);
     };
-    
+
+    setupScene();
+    animate();
     window.addEventListener('resize', handleResize);
-    
-    // Cleanup function
+
+    // Clean up on unmount
     return () => {
       window.removeEventListener('resize', handleResize);
-      
-      // Dispose of Three.js resources
-      if (renderer) {
-        renderer.dispose();
+      if (animationId) cancelAnimationFrame(animationId);
+      if (scene && mesh) scene.remove(mesh);
+      if (material) {
+        if ('dispose' in material) material.dispose();
       }
-      
-      if (controls) {
-        controls.dispose();
-      }
-      
-      // Revoke the object URL
-      if (stlUrl) {
-        URL.revokeObjectURL(stlUrl);
-      }
+      if (controls) controls.dispose();
+      if (renderer) renderer.dispose();
     };
   }, [stlUrl, stlViewerRef]);
 
@@ -843,17 +927,14 @@ export function ModelGenerator() {
         <CardContent className="p-3 sm:p-6">
           <Tabs defaultValue="text" className="w-full" onValueChange={(v) => setInputType(v as InputType)}>
             <TabsList className="grid w-full grid-cols-3 mb-4">
-              <TabsTrigger value="text" className="flex items-center justify-center">
-                <MessageSquare className="h-3 w-3 mr-1 sm:mr-2 sm:h-4 sm:w-4" /> 
-                <span className="text-xs sm:text-sm">Text</span>
+              <TabsTrigger value="text" className="text-xs sm:text-sm py-1.5 px-2">
+                Text
               </TabsTrigger>
-              <TabsTrigger value="image" className="flex items-center justify-center">
-                <Image className="h-3 w-3 mr-1 sm:mr-2 sm:h-4 sm:w-4" /> 
-                <span className="text-xs sm:text-sm">Image</span>
+              <TabsTrigger value="image" className="text-xs sm:text-sm py-1.5 px-2">
+                Image
               </TabsTrigger>
-              <TabsTrigger value="image-text" className="flex items-center justify-center">
-                <Layers className="h-3 w-3 mr-1 sm:mr-2 sm:h-4 sm:w-4" /> 
-                <span className="text-xs sm:text-sm">AI-Enhanced</span>
+              <TabsTrigger value="image-text" className="text-xs sm:text-sm py-1.5 px-2 font-medium">
+                AI-Enhanced
               </TabsTrigger>
             </TabsList>
             <div className="space-y-4">
@@ -981,7 +1062,7 @@ export function ModelGenerator() {
                       value={imageTextPrompt}
                       onChange={(e) => setImageTextPrompt(e.target.value)}
                       disabled={isGenerating}
-                      className="min-h-[60px] sm:min-h-[80px] text-sm sm:text-base pr-10"
+                      className="min-h-[70px] sm:min-h-[100px] text-sm sm:text-base pr-10"
                     />
                     <Button
                       type="button"
