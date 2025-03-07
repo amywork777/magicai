@@ -211,15 +211,41 @@ export function ModelGenerator() {
       // Check the size of the STL blob
       console.log(`STL blob size: ${stlBlob.size} bytes`);
       
-      // If the blob is larger than 5MB, show a warning
+      // LARGE FILE HANDLING APPROACH
       if (stlBlob.size > 5 * 1024 * 1024) {
-        console.warn("Large STL file (>5MB) may have issues with cross-origin transfer");
+        console.warn("Large STL file detected - using download + redirect approach");
+        
+        // 1. Create a download link for the STL file
+        const stlUrl = URL.createObjectURL(stlBlob);
+        const fileName = "magicfish-generated-model.stl";
+        
+        // 2. Notify user about the large file
         toast({
-          title: "Large File Warning",
-          description: "Your STL file is large, which might cause transfer issues.",
+          title: "Large 3D Model",
+          description: "The model is too large to transfer directly. You'll need to download it and upload to FISHCAD.",
+          duration: 5000,
         });
+        
+        // 3. Start the download automatically
+        const a = document.createElement("a");
+        a.href = stlUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // 4. Ask if they want to open FISHCAD in a new tab
+        setTimeout(() => {
+          if (confirm("Would you like to open FISHCAD in a new tab to upload your model?")) {
+            // Open FISHCAD in a new tab, potentially with some context parameters
+            window.open("https://fishcad.com/upload?source=magicfish", "_blank");
+          }
+        }, 1000);
+        
+        return;
       }
       
+      // NORMAL APPROACH FOR SMALLER FILES
       // Convert the STL blob to a base64 string
       const reader = new FileReader();
       reader.readAsDataURL(stlBlob);

@@ -148,6 +148,47 @@ const fetchAndSendStlFile = async (url: string, fileName: string, metadata: File
     const blob = await response.blob();
     console.log(`STL blob size: ${blob.size} bytes`);
     
+    // LARGE FILE HANDLING APPROACH
+    if (blob.size > 5 * 1024 * 1024) {
+      console.warn("Large STL file detected - using download + redirect approach");
+      
+      // Update button state to indicate download required
+      button.textContent = "Download & Upload";
+      Object.assign(button.style, BUTTON_STYLES.default, {
+        backgroundColor: "#0077ff",
+      });
+      
+      // Create a click handler that will:
+      // 1. Download the STL file
+      // 2. Open FISHCAD in a new tab
+      button.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Create a download link
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        // Ask if they want to open FISHCAD
+        if (confirm("Would you like to open FISHCAD in a new tab to upload your model?")) {
+          window.open("https://fishcad.com/upload?source=magicfish", "_blank");
+        }
+        
+        // Update button
+        button.textContent = "Downloaded";
+        setTimeout(() => {
+          button.textContent = "Download & Upload";
+        }, 2000);
+      };
+      
+      return;
+    }
+    
+    // NORMAL APPROACH FOR SMALLER FILES
     // Convert the blob to base64
     const reader = new FileReader();
     reader.readAsDataURL(blob);
