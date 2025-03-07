@@ -19,11 +19,9 @@ import {
 
 // Button states
 enum ButtonState {
-  READY = "Add to FISHCAD",
-  REQUESTING = "Requesting...",
-  IMPORTING = "Importing...",
-  PROCESSING = "Processing...",
-  SENT = "Added to FISHCAD",
+  READY = "Open in FISHCAD",
+  IMPORTING = "Opening FISHCAD...",
+  SENT = "Opened in FISHCAD",
   ERROR = "Error!"
 }
 
@@ -43,15 +41,7 @@ const BUTTON_STYLES = {
     alignItems: "center",
     transition: "all 0.2s ease"
   },
-  requesting: {
-    backgroundColor: "#ffa64d",
-    cursor: "default"
-  },
   importing: {
-    backgroundColor: "#ffa64d",
-    cursor: "default"
-  },
-  processing: {
     backgroundColor: "#ffa64d",
     cursor: "default"
   },
@@ -82,7 +72,7 @@ interface FileMetadata {
 }
 
 /**
- * Adds "Add to FISHCAD" buttons next to all STL links on the page
+ * Adds "Open in FISHCAD" buttons next to all STL links on the page
  */
 export function addFishcadButtons() {
   if (!isBrowser()) return;
@@ -106,7 +96,7 @@ export function addFishcadButtons() {
     
     // Create new button
     const button = document.createElement('button');
-    button.textContent = "Open in FISHCAD";
+    button.textContent = ButtonState.READY;
     button.classList.add('fishcad-button');
     button.dataset.stlUrl = link.href;
     
@@ -127,6 +117,11 @@ export function addFishcadButtons() {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       
+      // Update button state
+      button.disabled = true;
+      button.textContent = ButtonState.IMPORTING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
+      
       // Get STL URL
       const stlUrl = link.href;
       
@@ -134,7 +129,8 @@ export function addFishcadButtons() {
       localStorage.setItem('fishcad_pending_import', JSON.stringify({
         fileName: fileName,
         source: window.location.hostname,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        sourceUrl: window.location.href
       }));
       
       // Trigger download of the STL file
@@ -151,6 +147,13 @@ export function addFishcadButtons() {
         
         // Redirect to FISHCAD with special parameter
         window.location.href = "https://fishcad.com/import?pending=true";
+        
+        // Update button state (in case navigation is canceled)
+        setTimeout(() => {
+          button.disabled = false;
+          button.textContent = ButtonState.READY;
+          Object.assign(button.style, BUTTON_STYLES.default);
+        }, 5000);
       }, 100); // Short delay to ensure download starts
     });
     
@@ -344,8 +347,8 @@ function updateImportUI(requestId: string, status: string, data: Record<string, 
   // Update button based on status
   switch (status) {
     case 'requesting':
-      button.textContent = ButtonState.REQUESTING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.requesting);
+      button.textContent = ButtonState.IMPORTING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
       break;
     
     case 'importing':
@@ -354,8 +357,8 @@ function updateImportUI(requestId: string, status: string, data: Record<string, 
       break;
     
     case 'processing':
-      button.textContent = ButtonState.PROCESSING;
-      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.processing);
+      button.textContent = ButtonState.IMPORTING;
+      Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.importing);
       break;
     
     case 'completed':
@@ -423,71 +426,17 @@ export function handleResponseFromFishcad(event: MessageEvent) {
   // Verify origin (in production)
   // if (event.origin !== 'https://fishcad.com') return;
   
-  const data = event.data;
+  const data: any = event.data;
   console.log("Received message in Taiyaki integration:", data);
   
-  // Handle different message types
-  if (data) {
-    // Handle proxy response
-    if (data.type === 'stl-proxy-response' && data.requestId) {
-      const requestId = data.requestId;
-      const importData = activeImports.get(requestId);
-      
-      if (importData) {
-        // Update UI based on status
-        updateImportUI(requestId, data.status, data);
-      }
-    }
-    
-    // Handle direct import response
-    else if (data.type === 'stl-import-response' || 
-             data.action === 'stl-import-response' || 
-             data.type === 'import-response' || 
-             (data.type === 'response' && data.for === 'stl-import')) {
-      
-      console.log("FISHCAD response received in Taiyaki integration:", data);
-      
-      // Find the button associated with the file
-      const buttons = document.querySelectorAll('.fishcad-button');
-      let button: HTMLElement | undefined;
-      
-      // Try to find matching button by fileName
-      if (data.fileName) {
-        button = Array.from(buttons).find(
-          btn => (btn as HTMLElement).dataset.fileName === data.fileName
-        ) as HTMLElement | undefined;
-      }
-      
-      // If no button found by fileName, just use the last one that was clicked
-      if (!button && buttons.length > 0) {
-        // Use the most recently used button
-        const buttonsArray = Array.from(buttons) as HTMLElement[];
-        button = buttonsArray.find(btn => 
-          btn.textContent === ButtonState.REQUESTING || 
-          btn.textContent === ButtonState.IMPORTING || 
-          btn.textContent === ButtonState.PROCESSING
-        ) || buttonsArray[buttonsArray.length - 1];
-      }
-      
-      if (button) {
-        if (data.success) {
-          // Success state
-          button.textContent = ButtonState.SENT;
-          Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.sent);
-        } else {
-          // Error state
-          console.error("FISHCAD import error:", data.error || "Unknown error");
-          button.textContent = ButtonState.ERROR;
-          Object.assign(button.style, BUTTON_STYLES.default, BUTTON_STYLES.error);
-        }
-        
-        // Reset button after delay
-        setTimeout(() => {
-          button.textContent = ButtonState.READY;
-          Object.assign(button.style, BUTTON_STYLES.default);
-        }, 3000);
-      }
-    }
+  // With the new approach using localStorage and direct navigation,
+  // we don't need to handle most response messages from FISHCAD.
+  // However, we're keeping this function for future extension
+  // or for backward compatibility.
+  
+  // Handle test messages for the StlDemo component
+  if (data && data.type === 'stl-proxy-response' && data.requestId) {
+    console.log("Received test response:", data);
   }
 }
 
@@ -546,7 +495,7 @@ export function initializeTaiyakiIntegration() {
   // Slight delay to ensure DOM is fully loaded
   setTimeout(addFishcadButtons, 200);
   
-  // Set up event listener for messages from FISHCAD
+  // Set up event listener for messages from FISHCAD (for testing)
   const cleanupMessageListener = addWindowListener('message', handleResponseFromFishcad);
   
   // Set up observer for dynamic content
@@ -562,16 +511,6 @@ export function initializeTaiyakiIntegration() {
       observer.disconnect();
     }
     clearInterval(urlChangeInterval);
-    
-    // Clean up any active sockets
-    activeImports.forEach(importData => {
-      if (importData.socket) {
-        importData.socket.disconnect();
-      }
-    });
-    
-    // Clear active imports
-    activeImports.clear();
   };
 }
 

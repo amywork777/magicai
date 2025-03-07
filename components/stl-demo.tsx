@@ -11,14 +11,12 @@ import { AlertCircle, ArrowRight, Check, Loader2 } from "lucide-react";
  * STL Demo Component
  * 
  * This component demonstrates the Taiyaki integration by displaying
- * links to STL files that should have "Add to FISHCAD" buttons added to them.
+ * links to STL files that should have "Open in FISHCAD" buttons added to them.
  */
 export function StlDemo() {
   const [showDemo, setShowDemo] = useState(false);
-  const [testMode, setTestMode] = useState<'buttons' | 'proxy'>('buttons');
-  const [proxyStatus, setProxyStatus] = useState<string | null>(null);
-  const [proxyResult, setProxyResult] = useState<'success' | 'failure' | null>(null);
-  const [isTestRunning, setIsTestRunning] = useState(false);
+  const [testMode, setTestMode] = useState<'buttons' | 'localStorage'>('buttons');
+  const [localStorageContent, setLocalStorageContent] = useState<string>("");
   
   // Sample STL files (now with real URLs for testing)
   const sampleStlFiles = [
@@ -44,102 +42,60 @@ export function StlDemo() {
     }
   ];
   
-  // Handle messages from FISHCAD (for testing)
+  // Check localStorage for pending FISHCAD imports
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      console.log("Demo received message:", event.data);
-      
-      // Handle proxy responses
-      if (event.data && event.data.type === 'stl-proxy-response') {
-        setProxyStatus(event.data.status);
-        
-        if (event.data.status === 'completed') {
-          setProxyResult('success');
-          setIsTestRunning(false);
-        } else if (event.data.status === 'failed') {
-          setProxyResult('failure');
-          setIsTestRunning(false);
+    const checkLocalStorage = () => {
+      const pendingImport = localStorage.getItem('fishcad_pending_import');
+      if (pendingImport) {
+        try {
+          setLocalStorageContent(JSON.stringify(JSON.parse(pendingImport), null, 2));
+        } catch (e) {
+          setLocalStorageContent(pendingImport);
         }
+      } else {
+        setLocalStorageContent("No pending import found in localStorage");
       }
     };
     
-    window.addEventListener('message', handleMessage);
+    // Check when tab becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkLocalStorage();
+      }
+    };
+    
+    // Initial check
+    checkLocalStorage();
+    
+    // Set up interval to check periodically
+    const interval = setInterval(checkLocalStorage, 2000);
+    
+    // Set up visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
-      window.removeEventListener('message', handleMessage);
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
   
-  // Test the server proxy approach
-  const testServerProxyApproach = () => {
-    setIsTestRunning(true);
-    setProxyStatus('requesting');
-    setProxyResult(null);
-    
-    // Generate a unique request ID
-    const requestId = `stl-test-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    
-    // Send a proxy request message
-    window.parent.postMessage({
-      type: "stl-proxy-request",
-      requestId,
+  // Simulate setting up a pending import in localStorage
+  const simulateLocalStoragePendingImport = () => {
+    const importData = {
       fileName: "test-model.stl",
-      stlUrl: "https://storage.googleapis.com/ucloud-v3/ccab50f18aa14101a75a.stl",
-      metadata: {
-        title: "Test Model",
-        source: window.location.href,
-        tags: ["test", "demo"],
-        description: "A test model for the demo"
-      }
-    }, "*");
-    
-    // Simulate the importing status after a delay
-    setTimeout(() => {
-      setProxyStatus('importing');
-      
-      // Simulate the processing status after a delay
-      setTimeout(() => {
-        setProxyStatus('processing');
-        
-        // Simulate the completion after a delay
-        setTimeout(() => {
-          setProxyStatus('completed');
-          setProxyResult('success');
-          setIsTestRunning(false);
-          
-          // Simulate a response from FISHCAD
-          window.postMessage({
-            type: 'stl-proxy-response',
-            requestId,
-            status: 'completed',
-            success: true,
-            modelUrl: 'https://fishcad.com/model/test-123'
-          }, "*");
-        }, 3000);
-      }, 3000);
-    }, 3000);
-  };
-  
-  // Render the appropriate status badge
-  const renderStatusBadge = (status: string | null) => {
-    if (!status) return null;
-    
-    const badgeStyles = {
-      requesting: { variant: "outline", className: "bg-blue-50 text-blue-700 border-blue-300" },
-      importing: { variant: "outline", className: "bg-yellow-50 text-yellow-700 border-yellow-300" },
-      processing: { variant: "outline", className: "bg-purple-50 text-purple-700 border-purple-300" },
-      completed: { variant: "outline", className: "bg-green-50 text-green-700 border-green-300" },
-      failed: { variant: "outline", className: "bg-red-50 text-red-700 border-red-300" }
+      source: window.location.hostname,
+      sourceUrl: window.location.href,
+      timestamp: Date.now()
     };
     
-    const badgeStyle = badgeStyles[status as keyof typeof badgeStyles] || 
-                      { variant: "outline", className: "bg-gray-50 text-gray-700 border-gray-300" };
-    
-    return (
-      <Badge variant="outline" className={badgeStyle.className}>
-        {status.charAt(0).toUpperCase() + status.slice(1)}
-      </Badge>
-    );
+    localStorage.setItem('fishcad_pending_import', JSON.stringify(importData));
+    setLocalStorageContent(JSON.stringify(importData, null, 2));
+  };
+  
+  // Clear localStorage
+  const clearLocalStorage = () => {
+    localStorage.removeItem('fishcad_pending_import');
+    setLocalStorageContent("No pending import found in localStorage");
   };
   
   return (
@@ -147,7 +103,7 @@ export function StlDemo() {
       <CardHeader>
         <CardTitle>FISHCAD Integration Demo</CardTitle>
         <CardDescription>
-          Test the new server-proxy integration for sending STL files to FISHCAD
+          Test the new localStorage-based integration for sending STL files to FISHCAD
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -163,15 +119,15 @@ export function StlDemo() {
           
           {showDemo && (
             <div className="space-y-4 mt-4">
-              <Tabs defaultValue="buttons" onValueChange={(v) => setTestMode(v as 'buttons' | 'proxy')}>
+              <Tabs defaultValue="buttons" onValueChange={(v) => setTestMode(v as 'buttons' | 'localStorage')}>
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="buttons">Button Demo</TabsTrigger>
-                  <TabsTrigger value="proxy">Server-Proxy Test</TabsTrigger>
+                  <TabsTrigger value="localStorage">localStorage Test</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="buttons" className="mt-4">
                   <p className="text-sm text-gray-500 mb-4">
-                    The links below should have "Add to FISHCAD" buttons next to them.
+                    The links below should have "Open in FISHCAD" buttons next to them.
                     These buttons are automatically added by the Taiyaki integration.
                   </p>
                   
@@ -222,74 +178,54 @@ export function StlDemo() {
                   </div>
                 </TabsContent>
                 
-                <TabsContent value="proxy" className="mt-4">
+                <TabsContent value="localStorage" className="mt-4">
                   <div className="p-4 border rounded-md space-y-4">
-                    <h3 className="font-semibold text-lg">Server-Proxy Integration Test</h3>
+                    <h3 className="font-semibold text-lg">localStorage Integration Test</h3>
                     <p className="text-sm text-gray-600">
-                      This test simulates the new server-proxy approach for sending large STL files to FISHCAD.
-                      Instead of trying to send the entire STL file through the browser, only the URL is sent and
-                      FISHCAD's server downloads it directly.
+                      This test simulates the localStorage-based approach for sending STL files to FISHCAD.
+                      When a user clicks the "Open in FISHCAD" button, it stores information in localStorage,
+                      downloads the STL file, and then redirects to FISHCAD.
                     </p>
                     
                     <div className="my-4 p-4 bg-gray-50 rounded-md">
-                      <h4 className="font-medium mb-2">Test Status</h4>
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium w-24">Status:</span>
-                          {proxyStatus ? renderStatusBadge(proxyStatus) : <span className="text-sm text-gray-500">Not started</span>}
-                        </div>
+                      <h4 className="font-medium mb-2">localStorage Content</h4>
+                      <pre className="bg-gray-100 p-3 rounded text-xs overflow-auto max-h-40">
+                        {localStorageContent}
+                      </pre>
+                      
+                      <div className="flex gap-2 mt-4">
+                        <Button
+                          onClick={simulateLocalStoragePendingImport}
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          Simulate Pending Import
+                        </Button>
                         
-                        {proxyResult && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium w-24">Result:</span>
-                            {proxyResult === 'success' ? (
-                              <div className="flex items-center gap-1 text-green-600">
-                                <Check size={16} />
-                                <span>Success</span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1 text-red-600">
-                                <AlertCircle size={16} />
-                                <span>Failed</span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {proxyStatus === 'completed' && (
-                          <div className="mt-2 p-2 bg-green-50 text-green-700 rounded border border-green-200 text-sm">
-                            <p>Model was successfully sent to FISHCAD!</p>
-                            <a href="https://fishcad.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-green-600 hover:underline mt-1">
-                              <span>View model on FISHCAD</span>
-                              <ArrowRight size={14} />
-                            </a>
-                          </div>
-                        )}
+                        <Button
+                          onClick={clearLocalStorage}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Clear localStorage
+                        </Button>
                       </div>
                     </div>
                     
-                    <Button 
-                      onClick={testServerProxyApproach}
-                      disabled={isTestRunning}
-                      className="w-full"
-                    >
-                      {isTestRunning ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Testing Server-Proxy Integration...
-                        </>
-                      ) : (
-                        "Test Server-Proxy Integration"
-                      )}
-                    </Button>
-                  </div>
-                  
-                  <div className="mt-4 p-4 border border-blue-200 bg-blue-50 rounded-md">
-                    <h3 className="font-medium text-blue-800 mb-2">Technical Information</h3>
-                    <p className="text-sm text-blue-700">
-                      The server-proxy approach enables reliable transfer of large STL files by sending only a URL to FISHCAD. 
-                      FISHCAD's server then downloads the file directly, avoiding browser size limitations.
-                    </p>
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+                      <h4 className="font-medium text-blue-800 flex items-center gap-2">
+                        <AlertCircle size={16} />
+                        How It Works
+                      </h4>
+                      <ol className="mt-2 text-sm text-blue-700 space-y-2 pl-5 list-decimal">
+                        <li>When user clicks "Open in FISHCAD" button, we store file info in localStorage</li>
+                        <li>The browser downloads the STL file to the user's computer</li>
+                        <li>The page then redirects to FISHCAD's import page</li>
+                        <li>FISHCAD reads from localStorage to know a file is pending import</li>
+                        <li>FISHCAD guides the user to select the downloaded file</li>
+                        <li>The file is imported with all the metadata preserved</li>
+                      </ol>
+                    </div>
                   </div>
                 </TabsContent>
               </Tabs>
