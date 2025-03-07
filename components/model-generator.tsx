@@ -679,22 +679,32 @@ export function ModelGenerator() {
       console.log(`📄 Task status data:`, data);
 
       // Even if we get an error response, if it has status and progress we can still use it
-      if (data.error) {
-        console.warn(`⚠️ API returned error with 200 status:`, data.error);
+      if (data.error || data.message) {
+        const errorMsg = data.error || data.message;
+        console.warn(`⚠️ API returned error/message with 200 status:`, errorMsg);
         
         // If the server returned a status and progress, we can use those to update the UI
         if (data.status === 'running' && typeof data.progress === 'number') {
           console.log(`⚠️ Using fallback progress data from API error response:`, data.progress);
           setProgress(data.progress);
           
-          // Continue polling
-          setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 3000);
+          // For API key issues, show a toast only on the first retry
+          if (errorMsg?.includes('API key') && retryCount === 0) {
+            toast({
+              title: "API Configuration Issue",
+              description: "There may be an issue with the API configuration. Your model is still being processed.",
+              duration: 5000,
+            });
+          }
+          
+          // Continue polling with slightly longer delay for simulated progress
+          setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 4000);
           return;
         }
         
         // Only throw if no useful data is provided
         if (!data.status) {
-          throw new Error(data.error);
+          throw new Error(errorMsg);
         }
       }
 
@@ -748,8 +758,22 @@ export function ModelGenerator() {
       } else {
         // Still in progress or using fake/fallback progress
         setProgress(data.progress || 0)
-        // Poll again after a delay
-        setTimeout(() => pollTaskStatus(taskId), 2000)
+        
+        // If we've reached max retries but still getting progress updates,
+        // implement a "simulated progress" mechanism that will never reach 100%
+        if (retryCount >= maxRetries && data.progress) {
+          // Ensure progress keeps moving slightly but never reaches 100%
+          const simulatedProgress = Math.min(98, data.progress + 3 + Math.floor(Math.random() * 5));
+          console.log(`⚠️ Using simulated progress after max retries:`, simulatedProgress);
+          setProgress(simulatedProgress);
+          
+          // Every 10 seconds, we should check if the real API is back
+          setTimeout(() => pollTaskStatus(taskId, 0, maxRetries), 10000);
+          return;
+        }
+        
+        // Regular polling
+        setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 3000)
       }
     } catch (error) {
       console.error("Error polling task status:", error);

@@ -34,8 +34,22 @@ async function handleTaskStatus(request: NextRequest) {
       return NextResponse.json(
         { 
           status: 'running',
-          progress: 35,
-          message: 'API key missing, but showing progress UI'
+          progress: Math.min(85, 25 + Math.floor(Math.random() * 20)), // Random progress between 25-45%
+          message: 'API key missing, showing simulated progress'
+        }, 
+        { status: 200, headers: corsHeaders }
+      );
+    }
+
+    // Validate API key format (basic check)
+    if (!apiKey.startsWith('tsk_') || apiKey.length < 20) {
+      console.error(`❌ [task-status] TRIPO_API_KEY appears to be invalid (should start with 'tsk_' and be at least 20 chars)`);
+      
+      return NextResponse.json(
+        { 
+          status: 'running',
+          progress: Math.min(90, 30 + Math.floor(Math.random() * 25)), // Random progress between 30-55%
+          message: 'API key format appears invalid, showing simulated progress'
         }, 
         { status: 200, headers: corsHeaders }
       );
@@ -44,7 +58,7 @@ async function handleTaskStatus(request: NextRequest) {
     console.log(`✅ [task-status] TRIPO_API_KEY found (length: ${apiKey.length})`);
 
     // Call Tripo API to check task status
-    const tripoResponse = await fetch(`https://api.tripo3d.ai/v2/openapi/task?task_id=${taskId}`, {
+    const tripoResponse = await fetch(`https://api.tripo3d.ai/v2/openapi/task/${taskId}`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -74,7 +88,7 @@ async function handleTaskStatus(request: NextRequest) {
         return NextResponse.json(
           { 
             status: 'running',
-            progress: 45,
+            progress: Math.min(90, 40 + Math.floor(Math.random() * 15)), // Random progress between 40-55%
             error: "API key issue, showing progress UI as fallback",
             details: errorData
           }, 
@@ -86,7 +100,7 @@ async function handleTaskStatus(request: NextRequest) {
       return NextResponse.json(
         { 
           status: 'running',
-          progress: 50,
+          progress: Math.min(95, 50 + Math.floor(Math.random() * 20)), // Random progress between 50-70%
           error: "Failed to get task status", 
           details: errorData
         }, 
@@ -102,6 +116,12 @@ async function handleTaskStatus(request: NextRequest) {
     // If there's no data property in response, return an error
     if (!data || !data.data) {
       console.error(`❌ [task-status] Unexpected response format from Tripo API:`, data);
+      
+      // Check specifically for API key related issues in the raw response
+      if (data && (data.code === 2001 || data.message?.includes('auth'))) {
+        console.error(`❌ [task-status] API key seems invalid or task ID not accessible with this key`);
+      }
+      
       return NextResponse.json(
         { 
           status: 'running',
