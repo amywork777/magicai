@@ -611,15 +611,47 @@ export function ModelGenerator() {
     }
   }
 
-  const pollTaskStatus = async (taskId: string) => {
+  const pollTaskStatus = async (taskId: string, retryCount = 0, maxRetries = 3) => {
     try {
-      const response = await fetch(`/api/task-status?taskId=${taskId}`)
+      console.log(`🔍 Polling task status for taskId: ${taskId} (attempt: ${retryCount + 1}/${maxRetries + 1})`);
+      
+      const response = await fetch(`/api/task-status?taskId=${taskId}`, {
+        // Add cache busting to prevent caching issues
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache'
+        }
+      }).catch(err => {
+        console.error(`❌ Network error fetching task status:`, err);
+        throw err;
+      });
+
+      console.log(`📥 Task status response:`, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
 
       if (!response.ok) {
-        throw new Error("Failed to get task status")
+        // For 405 Method Not Allowed specifically (CORS or server config issue)
+        if (response.status === 405) {
+          console.warn(`⚠️ API returned 405 Method Not Allowed - likely a CORS or server config issue`);
+          
+          if (retryCount < maxRetries) {
+            console.log(`🔄 Retrying in 3 seconds... (${retryCount + 1}/${maxRetries})`);
+            setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 3000);
+            return;
+          }
+        }
+        throw new Error(`API returned ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json()
+      const data = await response.json().catch(err => {
+        console.error(`❌ Error parsing JSON response:`, err);
+        throw new Error("Failed to parse task status response");
+      });
+
+      console.log(`📄 Task status data:`, data);
 
       if (data.status === "success") {
         setStatus("completed")
@@ -675,14 +707,23 @@ export function ModelGenerator() {
         setTimeout(() => pollTaskStatus(taskId), 2000)
       }
     } catch (error) {
-      console.error("Error polling task status:", error)
-      setStatus("error")
-      setIsGenerating(false)
+      console.error("Error polling task status:", error);
+      
+      // Implement retry logic for errors
+      if (retryCount < maxRetries) {
+        console.log(`🔄 Error occurred, retrying in 3 seconds... (${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 3000);
+        return;
+      }
+      
+      // Only show error to user after max retries
+      setStatus("error");
+      setIsGenerating(false);
       toast({
         title: "Error",
-        description: "Failed to check model generation status. Please try again.",
+        description: "Failed to check model status. The model may still be generating.",
         variant: "destructive",
-      })
+      });
     }
   }
 

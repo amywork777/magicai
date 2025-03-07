@@ -1,5 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+// Define CORS headers for consistent use
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
 export async function GET(request: NextRequest) {
   try {
     // Extract task ID from query parameters
@@ -10,7 +17,10 @@ export async function GET(request: NextRequest) {
     
     if (!taskId) {
       console.error(`❌ [task-status] No task ID provided in request`);
-      return NextResponse.json({ error: "Task ID is required" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Task ID is required" }, 
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     // Call Tripo API to check task status
@@ -26,7 +36,10 @@ export async function GET(request: NextRequest) {
     if (!tripoResponse.ok) {
       const errorData = await tripoResponse.json()
       console.error(`❌ [task-status] Tripo API error:`, errorData);
-      return NextResponse.json({ error: "Failed to get task status" }, { status: tripoResponse.status })
+      return NextResponse.json(
+        { error: "Failed to get task status" }, 
+        { status: tripoResponse.status, headers: corsHeaders }
+      );
     }
 
     const data = await tripoResponse.json()
@@ -70,10 +83,25 @@ export async function GET(request: NextRequest) {
     
     console.log(`🔍 [task-status] Sending response:`, response);
 
-    return NextResponse.json(response)
+    return NextResponse.json(response, { headers: corsHeaders });
   } catch (error) {
     console.error(`❌ [task-status] Error getting task status:`, error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Internal server error" }, 
+      { status: 500, headers: corsHeaders }
+    );
   }
+}
+
+// Add OPTIONS method handler for CORS preflight requests
+export async function OPTIONS(request: Request) {
+  console.log("🔍 [task-status] OPTIONS request received");
+  return NextResponse.json(
+    { success: true },
+    { 
+      status: 200,
+      headers: corsHeaders
+    }
+  );
 }
 
