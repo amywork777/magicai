@@ -44,7 +44,21 @@ interface SpeechRecognition extends EventTarget {
   onend: () => void;
 }
 
-// Add global declarations
+// Define configuration message interface
+interface ConfigMessage {
+  type: string;
+  config?: {
+    limits?: {
+      free?: number;
+      pro?: number;
+    };
+    userId?: string;
+    userTier?: string;
+    usageCount?: number;
+  };
+}
+
+// Define window type
 declare global {
   interface Window {
     SpeechRecognition?: new () => SpeechRecognition;
@@ -80,6 +94,50 @@ export function ModelGenerator() {
   const [isConvertingStl, setIsConvertingStl] = useState(false)
   const [stlUrl, setStlUrl] = useState<string | null>(null)
   const [stlViewerRef, setStlViewerRef] = useState<HTMLDivElement | null>(null)
+
+  const [userConfig, setUserConfig] = useState<{
+    limits?: {
+      free?: number;
+      pro?: number;
+    };
+    userId?: string;
+    userTier?: string;
+    usageCount?: number;
+  }>({});
+
+  // Listen for configuration messages from parent window
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      console.log("Received message:", event.data);
+      
+      // Check if this is a configuration message
+      if (event.data && event.data.type === 'config') {
+        const configMessage = event.data as ConfigMessage;
+        console.log("Received configuration:", configMessage.config);
+        
+        // Store configuration
+        if (configMessage.config) {
+          setUserConfig(configMessage.config);
+        }
+      }
+    };
+    
+    // Add event listener for messages
+    window.addEventListener('message', handleMessage);
+    
+    // Notify parent that we're ready to receive configuration
+    if (window !== window.parent) {
+      window.parent.postMessage({
+        type: 'taiyaki-ready',
+        source: 'magic.taiyaki.ai'
+      }, '*');
+    }
+    
+    // Clean up event listener
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -222,16 +280,41 @@ export function ModelGenerator() {
     disabled: status === "uploading" || status === "generating",
   })
 
+  // Optional: Handle user limits based on configuration
+  const checkUserLimits = (): boolean => {
+    if (!userConfig.limits) return true; // No limits configured
+    
+    const { userTier, usageCount, limits } = userConfig;
+    
+    // Check if user has reached their limit
+    if (userTier === 'free' && limits?.free && usageCount && usageCount >= limits.free) {
+      toast({
+        title: "Generation Limit Reached",
+        description: `Free users can generate up to ${limits.free} models. Upgrade to Pro for more!`,
+        variant: "destructive",
+      });
+      return false;
+    }
+    
+    return true;
+  };
+
   const handleTextSubmit = async () => {
     if (!textPrompt.trim()) {
       toast({
-        title: "Error",
-        description: "Please enter a description for your 3D model",
+        title: "Empty Prompt",
+        description: "Please enter a text prompt to generate a model.",
         variant: "destructive",
       })
       return
     }
-
+    
+    // Check if user has reached their limit
+    if (!checkUserLimits()) return;
+    
+    setStatus("uploading")
+    setProgress(0)
+    
     try {
       setStatus("generating")
       setProgress(0)
@@ -276,15 +359,21 @@ export function ModelGenerator() {
   const handleImageSubmit = async () => {
     if (!selectedFile) {
       toast({
-        title: "Error",
-        description: "Please select an image to upload",
+        title: "No Image",
+        description: "Please upload an image to generate a model.",
         variant: "destructive",
       })
       return
     }
-
+    
+    // Check if user has reached their limit
+    if (!checkUserLimits()) return;
+    
+    setStatus("uploading")
+    setProgress(0)
+    
     try {
-      setStatus("uploading")
+      setStatus("generating")
       setProgress(0)
       setIsGenerating(true)
       // Reset STL state when generating a new model
@@ -343,15 +432,30 @@ export function ModelGenerator() {
   const handleImageTextSubmit = async () => {
     if (!selectedImageTextFile) {
       toast({
-        title: "Error",
-        description: "Please select an image to upload",
+        title: "No Image",
+        description: "Please upload an image to generate a model.",
         variant: "destructive",
       })
       return
     }
-
+    
+    if (!imageTextPrompt.trim()) {
+      toast({
+        title: "Empty Prompt",
+        description: "Please enter a text description to guide the generation.",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    // Check if user has reached their limit
+    if (!checkUserLimits()) return;
+    
+    setStatus("uploading")
+    setProgress(0)
+    
     try {
-      setStatus("uploading")
+      setStatus("generating")
       setProgress(0)
       setIsGenerating(true)
       setIsAnalyzingImage(true)
@@ -720,6 +824,26 @@ export function ModelGenerator() {
           title: "Success!",
           description: "Your 3D model has been generated successfully.",
         });
+
+        // Send generation completion message to parent window if in iframe
+        if (window !== window.parent) {
+          const modelInfo = {
+            modelUrl: data.modelUrl || data.baseModelUrl,
+            prompt: inputType === "text" ? textPrompt : (inputType === "image-text" ? imageTextPrompt : "Image-based 3D model"),
+            generationMethod: inputType.includes("image") ? "image-to-3d" : "text-to-3d",
+            timestamp: new Date().toISOString(),
+            taskId: taskId,
+            fileType: 'glb'
+          };
+          
+          window.parent.postMessage({
+            type: 'model-generated',
+            source: 'magic.taiyaki.ai',
+            modelInfo
+          }, '*');
+          
+          console.log("Sent model generation notification to parent:", modelInfo);
+        }
       } else if (data.status === "failed" || data.status === "cancelled" || data.status === "unknown") {
         setStatus("error")
         setIsGenerating(false)
@@ -1338,6 +1462,21 @@ export function ModelGenerator() {
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Optionally add UI to show usage limits if configured */}
+      {userConfig.limits && (
+        <div className="text-xs text-gray-500 mt-2 text-center">
+          {userConfig.userTier === 'free' ? (
+            <p>
+              {userConfig.usageCount || 0} / {userConfig.limits.free} models generated 
+              {userConfig.usageCount && userConfig.limits.free && userConfig.usageCount >= userConfig.limits.free && 
+                " - Limit reached! Upgrade for more."}
+            </p>
+          ) : userConfig.userTier === 'pro' ? (
+            <p>Pro account: {userConfig.usageCount || 0} / {userConfig.limits.pro} models generated</p>
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }
