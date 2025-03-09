@@ -299,6 +299,98 @@ export function ModelGenerator() {
     return true;
   };
 
+  // Set up generation tracking
+  useEffect(() => {
+    const setupGenerationTracking = () => {
+      // Find all generate buttons in the component
+      const generateButtons = document.querySelectorAll('button, .button, [role="button"]');
+      
+      generateButtons.forEach(button => {
+        // Check if this looks like a generate button
+        const text = button.textContent?.toLowerCase() || '';
+        if (text.includes('generate') && 
+          (text.includes('model') || text.includes('3d'))) {
+          
+          console.log('Found generate button:', button);
+          
+          // Add click listener if not already tracked
+          if (!(button as any)._trackingAdded) {
+            (button as any)._trackingAdded = true;
+            
+            button.addEventListener('click', function() {
+              console.log('Generate 3D Model clicked');
+              
+              // Notify the parent (FISHCAD) about the generation
+              if (window.parent !== window) {
+                window.parent.postMessage({
+                  type: 'fishcad_model_generated',
+                  timestamp: new Date().toISOString()
+                }, '*');
+              }
+            });
+          }
+        }
+      });
+    };
+
+    // Run when component mounts
+    setupGenerationTracking();
+    
+    // Also run periodically to catch dynamically added buttons
+    const intervalId = setInterval(setupGenerationTracking, 2000);
+    
+    // Add a global click listener as backup
+    const handleGlobalClick = (event: MouseEvent) => {
+      let target = event.target as HTMLElement | null;
+      
+      // Look through clicked element and parents
+      for (let i = 0; i < 5 && target; i++) {
+        const text = target.textContent?.toLowerCase() || '';
+        
+        // Check if this is a generation button
+        if (text.includes('generate') && 
+          (text.includes('model') || text.includes('3d'))) {
+          
+          console.log('Generate button clicked via global handler');
+          
+          // Notify parent
+          if (window.parent !== window) {
+            window.parent.postMessage({
+              type: 'fishcad_model_generated',
+              element: target.tagName,
+              text: target.textContent
+            }, '*');
+          }
+          
+          break;
+        }
+        
+        target = target.parentElement;
+      }
+    };
+    
+    document.addEventListener('click', handleGlobalClick);
+    
+    // Clean up listeners when component unmounts
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('click', handleGlobalClick);
+    };
+  }, []);
+
+  // Also add direct tracking to our submit handlers
+  const notifyParentAboutGeneration = () => {
+    if (window.parent !== window) {
+      window.parent.postMessage({
+        type: 'fishcad_model_generated',
+        source: 'magic.taiyaki.ai',
+        method: inputType,
+        timestamp: new Date().toISOString()
+      }, '*');
+      console.log('Notified parent about model generation initiation');
+    }
+  };
+
   const handleTextSubmit = async () => {
     if (!textPrompt.trim()) {
       toast({
@@ -311,6 +403,9 @@ export function ModelGenerator() {
     
     // Check if user has reached their limit
     if (!checkUserLimits()) return;
+    
+    // Notify parent about generation initiation
+    notifyParentAboutGeneration();
     
     setStatus("uploading")
     setProgress(0)
@@ -368,6 +463,9 @@ export function ModelGenerator() {
     
     // Check if user has reached their limit
     if (!checkUserLimits()) return;
+    
+    // Notify parent about generation initiation
+    notifyParentAboutGeneration();
     
     setStatus("uploading")
     setProgress(0)
@@ -450,6 +548,9 @@ export function ModelGenerator() {
     
     // Check if user has reached their limit
     if (!checkUserLimits()) return;
+    
+    // Notify parent about generation initiation
+    notifyParentAboutGeneration();
     
     setStatus("uploading")
     setProgress(0)
