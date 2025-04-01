@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState, useRef } from "react"
+import React, { useEffect, useState, useRef, useMemo } from "react"
 import { Loader2, AlertCircle } from "lucide-react"
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,19 @@ export default function ModelViewer({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [loadError, setLoadError] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
+  const [isTripoUrl, setIsTripoUrl] = useState(false);
+
+  // Process the model URL to use our proxy if needed
+  const processedModelUrl = useMemo(() => {
+    if (!modelUrl) return '';
+    
+    // Check if this is a Tripo URL
+    const isTripo = modelUrl.includes('tripo-data.rg1.data.tripo3d.com');
+    setIsTripoUrl(isTripo);
+    
+    // Always use our proxy for external URLs
+    return `/api/model-proxy?url=${encodeURIComponent(modelUrl)}`;
+  }, [modelUrl]);
 
   // Function to handle error events
   const handleError = (error: any) => {
@@ -48,7 +61,7 @@ export default function ModelViewer({
 
   // Generate HTML content for model viewer
   const generateModelViewerHtml = () => {
-    if (!modelUrl) return '';
+    if (!processedModelUrl) return '';
 
     return `
       <!DOCTYPE html>
@@ -85,7 +98,7 @@ export default function ModelViewer({
         </head>
         <body>
           <model-viewer
-            src="${modelUrl}"
+            src="${processedModelUrl}"
             camera-controls
             auto-rotate
             shadow-intensity="1" 
@@ -108,7 +121,7 @@ export default function ModelViewer({
             // Preload the model
             const preloadLink = document.createElement('link');
             preloadLink.rel = 'preload';
-            preloadLink.href = '${modelUrl}';
+            preloadLink.href = '${processedModelUrl}';
             preloadLink.as = 'fetch';
             preloadLink.crossOrigin = 'anonymous';
             document.head.appendChild(preloadLink);
@@ -139,7 +152,7 @@ export default function ModelViewer({
   }, []);
 
   // Prepare the iframe URL for fallback mode
-  const fallbackUrl = modelUrl ? `/model-viewer.html?url=${encodeURIComponent(modelUrl)}` : '';
+  const fallbackUrl = processedModelUrl ? `/model-viewer.html?url=${encodeURIComponent(processedModelUrl)}` : '';
 
   // Determine what to render based on status
   const renderContent = () => {
@@ -178,7 +191,7 @@ export default function ModelViewer({
         <div className="flex flex-col items-center justify-center h-full text-destructive p-6 text-center gap-4">
           <AlertCircle className="h-8 w-8" />
           <div>Error loading 3D model. Please try again.</div>
-          {modelUrl && (
+          {processedModelUrl && (
             <Button 
               variant="outline" 
               onClick={() => {
@@ -193,7 +206,7 @@ export default function ModelViewer({
       );
     }
 
-    if (status === 'completed' && modelUrl) {
+    if (status === 'completed' && processedModelUrl) {
       if (useFallback) {
         return (
           <iframe

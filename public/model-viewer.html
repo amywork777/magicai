@@ -117,8 +117,18 @@
     }
 
     // Get model URL from query parameter
-    const modelUrl = getUrlParam('url');
+    let modelUrl = getUrlParam('url');
+    
+    // Convert to proxied URL if needed
     if (modelUrl) {
+      // If this is not already a proxy URL, convert it
+      if (!modelUrl.startsWith('/api/model-proxy')) {
+        // For external URLs, use our proxy
+        if (modelUrl.startsWith('http')) {
+          modelUrl = `/api/model-proxy?url=${encodeURIComponent(modelUrl)}`;
+        }
+      }
+      
       document.getElementById('model-viewer').setAttribute('src', modelUrl);
       
       // Preload the model
