@@ -26,6 +26,27 @@ function isFileCached(filename: string): boolean {
   return fs.existsSync(filePath);
 }
 
+// Add export config to make the route dynamic
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
+
+// Get common response headers for model data
+function getModelResponseHeaders(contentLength: number): Record<string, string> {
+  return {
+    'Content-Type': 'model/gltf-binary',
+    'Content-Disposition': 'attachment; filename="model.glb"',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Range, Origin, Accept, X-Requested-With',
+    'Access-Control-Expose-Headers': 'Content-Length, Content-Range',
+    'Cross-Origin-Resource-Policy': 'cross-origin',
+    'Cross-Origin-Embedder-Policy': 'credentialless',
+    'Cache-Control': 'public, max-age=31536000',
+    'Content-Length': contentLength.toString(),
+  };
+}
+
 // Main proxy function
 export async function GET(request: NextRequest) {
   try {
@@ -50,13 +71,7 @@ export async function GET(request: NextRequest) {
       const cachedFile = fs.readFileSync(cacheFilePath);
       
       return new NextResponse(cachedFile, {
-        headers: {
-          'Content-Type': 'model/gltf-binary',
-          'Content-Disposition': 'attachment; filename="model.glb"',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=31536000',
-          'Content-Length': cachedFile.length.toString(),
-        },
+        headers: getModelResponseHeaders(cachedFile.length),
       });
     }
 
@@ -110,13 +125,7 @@ export async function GET(request: NextRequest) {
             console.log('Model cached successfully (alternative method):', safeFilename);
             
             return new NextResponse(buffer, {
-              headers: {
-                'Content-Type': 'model/gltf-binary',
-                'Content-Disposition': 'attachment; filename="model.glb"',
-                'Access-Control-Allow-Origin': '*',
-                'Cache-Control': 'public, max-age=31536000',
-                'Content-Length': buffer.length.toString(),
-              },
+              headers: getModelResponseHeaders(buffer.length),
             });
           }
         } catch (altError) {
@@ -140,13 +149,7 @@ export async function GET(request: NextRequest) {
 
     // Return the model data
     return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': 'model/gltf-binary',
-        'Content-Disposition': 'attachment; filename="model.glb"',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=31536000',
-        'Content-Length': buffer.length.toString(),
-      },
+      headers: getModelResponseHeaders(buffer.length),
     });
   } catch (error) {
     console.error('Error in model proxy:', error);
@@ -162,8 +165,9 @@ export async function OPTIONS() {
   return new NextResponse(null, {
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS, HEAD',
+      'Access-Control-Allow-Headers': 'Content-Type, Range, Origin, Accept, Authorization, X-Requested-With',
+      'Access-Control-Max-Age': '86400',
     },
   });
 } 
