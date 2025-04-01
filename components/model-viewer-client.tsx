@@ -1,10 +1,18 @@
 "use client"
 
 import React, { useEffect, useState, useRef } from "react"
-import { Canvas, useThree } from "@react-three/fiber"
+import { Canvas, useThree, extend } from "@react-three/fiber"
 import { OrbitControls, useGLTF } from "@react-three/drei"
 import { Loader2, AlertCircle } from "lucide-react"
 import * as THREE from "three"
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter'
+
+// Extend Three.js elements to R3F
+extend({
+  group: THREE.Group,
+  ambientLight: THREE.AmbientLight,
+  directionalLight: THREE.DirectionalLight,
+})
 
 interface ModelViewerProps {
   modelUrl: string | null
@@ -13,50 +21,103 @@ interface ModelViewerProps {
 }
 
 function Model({ url }: { url: string }) {
-  const { scene } = useGLTF(url)
+  const { scene } = useGLTF(url, undefined, true)
   const modelRef = useRef<THREE.Group>(null)
   const { camera } = useThree()
+  const [loadError, setLoadError] = useState(false)
+
+  // Handle GLB loading errors
+  useEffect(() => {
+    if (!scene) {
+      setLoadError(true)
+    }
+  }, [scene])
+
+  const downloadSTL = () => {
+    if (!modelRef.current) return
+
+    try {
+      const exporter = new STLExporter()
+      const stl = exporter.parse(modelRef.current)
+      const blob = new Blob([stl], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = 'model.stl'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error converting to STL:', error)
+      alert('Error converting model to STL. Please try again.')
+    }
+  }
 
   // Apply white material to all meshes
   useEffect(() => {
     if (!scene) return
 
-    const whiteMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.3,
-      metalness: 0.1,
-    })
+    try {
+      const whiteMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.3,
+        metalness: 0.1,
+      })
 
-    scene.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        // Apply white material
-        child.material = whiteMaterial
+      scene.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh) {
+          // Apply white material
+          child.material = whiteMaterial
+        }
+      })
+
+      // Center camera on model
+      const box = new THREE.Box3().setFromObject(scene)
+      const center = box.getCenter(new THREE.Vector3())
+      const size = box.getSize(new THREE.Vector3())
+
+      // Adjust camera position based on model size
+      const maxDim = Math.max(size.x, size.y, size.z)
+      const fov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180)
+      const cameraZ = Math.abs(maxDim / Math.sin(fov / 2))
+
+      // Set camera position
+      camera.position.set(center.x, center.y, center.z + cameraZ * 1.5)
+      camera.lookAt(center)
+      camera.updateProjectionMatrix()
+
+      // Add the model to our ref
+      if (modelRef.current) {
+        modelRef.current.clear()
+        modelRef.current.add(scene.clone())
       }
-    })
-
-    // Center camera on model
-    const box = new THREE.Box3().setFromObject(scene)
-    const center = box.getCenter(new THREE.Vector3())
-    const size = box.getSize(new THREE.Vector3())
-
-    // Adjust camera position based on model size
-    const maxDim = Math.max(size.x, size.y, size.z)
-    const fov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180)
-    const cameraZ = Math.abs(maxDim / Math.sin(fov / 2))
-
-    // Set camera position
-    camera.position.set(center.x, center.y, center.z + cameraZ * 1.5)
-    camera.lookAt(center)
-    camera.updateProjectionMatrix()
-
-    // Add the model to our ref
-    if (modelRef.current) {
-      modelRef.current.clear()
-      modelRef.current.add(scene.clone())
+    } catch (error) {
+      console.error('Error setting up model:', error)
+      setLoadError(true)
     }
   }, [scene, camera])
 
-  return <group ref={modelRef} />
+  return (
+    <>
+      <group ref={modelRef} />
+      {!loadError && (
+        <div style={{
+          position: 'absolute',
+          bottom: '20px',
+          right: '20px',
+          zIndex: 1000
+        }}>
+          <button
+            onClick={downloadSTL}
+            className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors"
+          >
+            Download STL
+          </button>
+        </div>
+      )}
+    </>
+  )
 }
 
 // Custom scene setup component
