@@ -5,7 +5,6 @@ import { Canvas, useThree, extend } from "@react-three/fiber"
 import { OrbitControls, useGLTF } from "@react-three/drei"
 import { Loader2, AlertCircle } from "lucide-react"
 import * as THREE from "three"
-import { STLExporter } from 'three/examples/jsm/exporters/STLExporter'
 
 // Extend Three.js elements to R3F
 extend({
@@ -13,6 +12,17 @@ extend({
   ambientLight: THREE.AmbientLight,
   directionalLight: THREE.DirectionalLight,
 })
+
+// Add type declarations for Three.js JSX elements
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      group: any
+      ambientLight: any
+      directionalLight: any
+    }
+  }
+}
 
 interface ModelViewerProps {
   modelUrl: string | null
@@ -25,34 +35,59 @@ function Model({ url }: { url: string }) {
   const modelRef = useRef<THREE.Group>(null)
   const { camera } = useThree()
   const [loadError, setLoadError] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Handle GLB loading errors
   useEffect(() => {
     if (!scene) {
       setLoadError(true)
+      setIsLoading(false)
     }
   }, [scene])
 
-  const downloadSTL = () => {
-    if (!modelRef.current) return
+  // Add error handling for GLB loading
+  useEffect(() => {
+    const loadModel = async () => {
+      try {
+        setIsLoading(true)
+        setLoadError(false)
+        
+        // Try to fetch the model through our proxy endpoint
+        const response = await fetch('/api/proxy-model', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ modelUrl: url }),
+        })
 
-    try {
-      const exporter = new STLExporter()
-      const stl = exporter.parse(modelRef.current)
-      const blob = new Blob([stl], { type: 'application/octet-stream' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = 'model.stl'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-    } catch (error) {
-      console.error('Error converting to STL:', error)
-      alert('Error converting model to STL. Please try again.')
+        if (!response.ok) {
+          throw new Error(`Failed to load model: ${response.statusText}`)
+        }
+
+        const blob = await response.blob()
+        const objectUrl = URL.createObjectURL(blob)
+        
+        // Update the model URL to use our proxied version
+        if (modelRef.current) {
+          modelRef.current.clear()
+          const gltf = await useGLTF(objectUrl)
+          modelRef.current.add(gltf.scene)
+        }
+
+        URL.revokeObjectURL(objectUrl)
+      } catch (error) {
+        console.error('Error loading model:', error)
+        setLoadError(true)
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }
+
+    if (url) {
+      loadModel()
+    }
+  }, [url])
 
   // Apply white material to all meshes
   useEffect(() => {
@@ -101,7 +136,12 @@ function Model({ url }: { url: string }) {
   return (
     <>
       <group ref={modelRef} />
-      {!loadError && (
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+          <Loader2 className="h-8 w-8 animate-spin text-white" />
+        </div>
+      )}
+      {!loadError && !isLoading && (
         <div style={{
           position: 'absolute',
           bottom: '20px',
@@ -109,7 +149,10 @@ function Model({ url }: { url: string }) {
           zIndex: 1000
         }}>
           <button
-            onClick={downloadSTL}
+            onClick={() => {
+              // TODO: Implement STL download
+              console.log('STL download not implemented yet')
+            }}
             className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors"
           >
             Download STL
