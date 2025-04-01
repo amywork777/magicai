@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Direct Tripo Model Fetcher</title>
+  <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups">
+  <meta http-equiv="Cross-Origin-Embedder-Policy" content="credentialless">
+  <title>MagicAI 3D Model Viewer</title>
   <style>
     body, html {
       margin: 0;
@@ -21,12 +23,23 @@
       height: 100vh;
       width: 100%;
     }
-    .status {
+    .status-bar {
       padding: 10px;
-      background-color: #0f172a;
+      background-color: #16213e;
       color: white;
       z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .status-message {
+      flex: 1;
       text-align: center;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 10px;
     }
     .viewer-container {
       flex: 1;
@@ -35,7 +48,7 @@
     model-viewer {
       width: 100%;
       height: 100%;
-      background-color: #000;
+      background-color: #0e1524;
     }
     .loading {
       position: absolute;
@@ -86,21 +99,50 @@
       background-color: #06b6d4;
       color: white;
       border: none;
-      padding: 10px 20px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
       border-radius: 4px;
-      margin-top: 1rem;
       cursor: pointer;
       font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
     .btn:hover {
       background-color: #0891b2;
     }
+    .btn:disabled {
+      background-color: #475569;
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-small {
+      padding: 6px 10px;
+      font-size: 0.7rem;
+    }
   </style>
+  <!-- Model viewer script with specific version to avoid CORS issues -->
   <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js" crossorigin="anonymous"></script>
+  <!-- Load our enhanced model fetcher -->
+  <script src="/model-fetcher.js"></script>
 </head>
 <body>
   <div class="container">
-    <div class="status" id="status">Initializing...</div>
+    <div class="status-bar">
+      <div class="status-message" id="status">Initializing viewer...</div>
+      <div class="action-buttons">
+        <button id="downloadBtn" class="btn btn-small" disabled>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download GLB
+        </button>
+      </div>
+    </div>
     
     <div class="viewer-container">
       <model-viewer 
@@ -110,6 +152,9 @@
         shadow-intensity="1"
         shadow-softness="0.5"
         exposure="0.8"
+        ar
+        ar-modes="webxr scene-viewer"
+        orientation="0 0 0"
         environment-image="neutral"
         style="display:none"
       ></model-viewer>
@@ -122,9 +167,22 @@
       <div id="error" class="error hidden">
         <h2>Error Loading Model</h2>
         <p id="errorMessage">Failed to load 3D model.</p>
-        <div>
-          <button class="btn" id="tryAgainBtn">Try Again</button>
-          <button class="btn" id="downloadBtn" style="margin-left: 10px;">Download Model</button>
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+          <button class="btn" id="tryAgainBtn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <path d="M3 3v5h5"/>
+            </svg>
+            Try Again
+          </button>
+          <button class="btn" id="tryProxyBtn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Try Server Proxy
+          </button>
         </div>
       </div>
     </div>
@@ -132,6 +190,7 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', function() {
+      // Get elements
       const viewer = document.getElementById('viewer');
       const loading = document.getElementById('loading');
       const error = document.getElementById('error');
@@ -139,11 +198,18 @@
       const loadingText = document.getElementById('loadingText');
       const errorMessage = document.getElementById('errorMessage');
       const tryAgainBtn = document.getElementById('tryAgainBtn');
+      const tryProxyBtn = document.getElementById('tryProxyBtn');
       const downloadBtn = document.getElementById('downloadBtn');
       
-      // Get model URL from query parameter or use default Tripo URL
+      // Get model URL from query parameter
       const urlParams = new URLSearchParams(window.location.search);
-      const modelUrl = urlParams.get('url') || 'https://tripo-data.rg1.data.tripo3d.com/tcli_9270104da6f34a46a2479869119b834d/20250401/33534c84-421c-4d08-b255-32ea7ccaa66f/tripo_base_model_33534c84-421c-4d08-b255-32ea7ccaa66f.glb?Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly90cmlwby1kYXRhLnJnMS5kYXRhLnRyaXBvM2QuY29tL3RjbGlfOTI3MDEwNGRhNmYzNGE0NmEyNDc5ODY5MTE5YjgzNGQvMjAyNTA0MDEvMzM1MzRjODQtNDIxYy00ZDA4LWIyNTUtMzJlYTdjY2FhNjZmL3RyaXBvX2Jhc2VfbW9kZWxfMzM1MzRjODQtNDIxYy00ZDA4LWIyNTUtMzJlYTdjY2FhNjZmLmdsYiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc0MzU1MjAwMH19fV19&Signature=M6KENdGTGxLDYFl5e4Dxrqd5ao~fnGNpSnLKFVpBteKEq4CT-osEcoxxnQkeYswt~63dl6EWNn6tQ9KHMsUb1ShaYFVc~X-NOmHpptpayupTZcWTXLkrdL5agIWHMcfkuHI9CuUufHlQfpHMzKblVS2Gohc8GRRIBtAkyR22gncB1iuaYDsnN9-Y-usj4ZAIY0YR1VonnycFaFSxBFrwoBUPi1JbsPs~a2avqWmg-mgGX7RxpMn2MLEIk05jJKpt87KxSuNNmY~mAsrBRr9inZqwGd~jNPttv6ibbb3Ylvsk5zsmAEPze77qOuQKEhun9rBdKj1tAIUunFZva4Q4qQ__&Key-Pair-Id=K1676C64NMVM2J';
+      const modelUrl = urlParams.get('url');
+      
+      if (!modelUrl) {
+        showError('No model URL provided. Add ?url=... to the URL.');
+        updateStatus('Missing model URL');
+        return;
+      }
       
       // Show loading state
       function showLoading(message) {
@@ -164,162 +230,90 @@
         status.textContent = message;
       }
       
-      // Main function to load model using XHR (avoids fetch CORS issues)
-      function loadModelWithXHR() {
-        showLoading('Downloading model...');
-        updateStatus('Requesting model data...');
-        
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', modelUrl, true);
-        xhr.responseType = 'blob';
-        
-        // Set all headers that might help
-        xhr.setRequestHeader('Accept', '*/*');
-        xhr.setRequestHeader('Accept-Language', 'en-US,en;q=0.9');
-        xhr.setRequestHeader('Origin', window.location.origin);
-        xhr.setRequestHeader('Referer', window.location.origin);
-        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-        
-        xhr.onprogress = function(event) {
-          if (event.lengthComputable) {
-            const percentComplete = Math.round((event.loaded / event.total) * 100);
-            showLoading(`Downloading: ${percentComplete}%`);
-            updateStatus(`Downloading model: ${percentComplete}%`);
-          }
-        };
-        
-        xhr.onload = function() {
-          if (xhr.status === 200) {
-            updateStatus('Model downloaded, loading viewer...');
-            const blob = xhr.response;
-            const objectUrl = URL.createObjectURL(blob);
-            
-            // Now set the model viewer source
-            viewer.setAttribute('src', objectUrl);
-            viewer.style.display = 'block';
-            
-            // Setup download link
-            downloadBtn.onclick = function() {
-              const a = document.createElement('a');
-              a.href = objectUrl;
-              a.download = 'tripo-model.glb';
-              a.click();
-            };
-            
-            // Listen for model load
-            viewer.addEventListener('load', function onLoad() {
-              loading.classList.add('hidden');
-              updateStatus('Model loaded successfully');
-              viewer.removeEventListener('load', onLoad);
-            });
-            
-            // Listen for errors
-            viewer.addEventListener('error', function onError(e) {
-              console.error('Model viewer error:', e);
-              showError('Error displaying the model, but the download was successful.');
-              updateStatus('Error displaying model');
-              viewer.removeEventListener('error', onError);
-            });
-          } else {
-            console.error('XHR Error:', xhr.status, xhr.statusText);
-            showError(`Failed to download model: ${xhr.status} ${xhr.statusText}`);
-            updateStatus('Error loading model');
-          }
-        };
-        
-        xhr.onerror = function(e) {
-          console.error('XHR Network Error:', e);
-          showError('Network error while downloading model. Check your connection and try again.');
-          updateStatus('Network error');
-          
-          // Try fallback method
-          fallbackToProxy();
-        };
-        
-        xhr.onabort = function() {
-          showError('Model download was aborted.');
-          updateStatus('Download aborted');
-        };
-        
-        xhr.ontimeout = function() {
-          showError('Model download timed out. The server might be slow or unresponsive.');
-          updateStatus('Download timed out');
-          
-          // Try fallback method
-          fallbackToProxy();
-        };
-        
-        // Set timeout (10 seconds)
-        xhr.timeout = 120000;
-        
-        // Send the request
+      // Main function to load the model
+      async function loadModel(useProxy = false) {
         try {
-          xhr.send();
-        } catch (e) {
-          console.error('Error sending XHR:', e);
-          showError(`Error initiating download: ${e.message}`);
-          updateStatus('Error starting download');
+          // Clear any previous error state
+          error.classList.add('hidden');
+          loading.classList.remove('hidden');
           
-          // Try fallback method
-          fallbackToProxy();
+          // Disable viewer if it's currently visible
+          viewer.style.display = 'none';
+          
+          // Update status
+          showLoading(useProxy ? 'Loading through server proxy...' : 'Downloading model...');
+          updateStatus(useProxy ? 'Using server proxy' : 'Fetching model data');
+          
+          // Fetch the model
+          let response;
+          if (useProxy) {
+            // Direct proxy approach
+            const proxyUrl = `/api/proxy-model?url=${encodeURIComponent(modelUrl)}`;
+            response = await fetch(proxyUrl);
+          } else {
+            // Use our enhanced model fetcher
+            response = await window.fetchModel(modelUrl);
+          }
+          
+          if (!response.ok && useProxy) {
+            // For proxy requests we know ok status
+            throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
+          }
+          
+          // For non-proxy, since XHR or no-cors might be used, we can't check response.ok
+          
+          // Get the blob data
+          updateStatus('Processing model data');
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          
+          // Setup download functionality
+          downloadBtn.onclick = function() {
+            const a = document.createElement('a');
+            a.href = objectUrl;
+            a.download = modelUrl.split('/').pop() || 'model.glb';
+            a.click();
+          };
+          downloadBtn.disabled = false;
+          
+          // Load the model into the viewer
+          updateStatus('Loading model into viewer');
+          viewer.setAttribute('src', objectUrl);
+          viewer.style.display = 'block';
+          
+          // Handle model load success
+          viewer.addEventListener('load', function onLoad() {
+            loading.classList.add('hidden');
+            updateStatus('Model loaded successfully');
+            viewer.removeEventListener('load', onLoad);
+          });
+          
+          // Handle model load error
+          viewer.addEventListener('error', function onError(e) {
+            console.error('Model viewer error:', e);
+            showError('Error displaying the model. Try downloading instead.');
+            updateStatus('Error displaying model');
+            viewer.removeEventListener('error', onError);
+          });
+        } catch (error) {
+          console.error('Error loading model:', error);
+          showError(`Failed to load model: ${error.message}`);
+          updateStatus('Error loading model');
         }
       }
       
-      // Fallback to proxy if direct XHR fails
-      function fallbackToProxy() {
-        showLoading('Trying server proxy...');
-        updateStatus('Using server proxy to download model...');
-        
-        const proxyUrl = `/api/proxy-model?url=${encodeURIComponent(modelUrl)}`;
-        
-        fetch(proxyUrl)
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`Proxy error: ${response.status} ${response.statusText}`);
-            }
-            return response.blob();
-          })
-          .then(blob => {
-            const objectUrl = URL.createObjectURL(blob);
-            
-            viewer.setAttribute('src', objectUrl);
-            viewer.style.display = 'block';
-            
-            downloadBtn.onclick = function() {
-              const a = document.createElement('a');
-              a.href = objectUrl;
-              a.download = 'tripo-model.glb';
-              a.click();
-            };
-            
-            viewer.addEventListener('load', function onLoad() {
-              loading.classList.add('hidden');
-              updateStatus('Model loaded successfully via proxy');
-              viewer.removeEventListener('load', onLoad);
-            });
-            
-            viewer.addEventListener('error', function onError(e) {
-              console.error('Model viewer error with proxy:', e);
-              showError('Error displaying the model, but the proxy download was successful.');
-              updateStatus('Error displaying model');
-              viewer.removeEventListener('error', onError);
-            });
-          })
-          .catch(e => {
-            console.error('Proxy fetch error:', e);
-            showError(`Both direct and proxy model loading failed: ${e.message}`);
-            updateStatus('All loading methods failed');
-          });
-      }
-      
-      // Try again button
+      // Event listeners
       tryAgainBtn.addEventListener('click', function() {
-        loadModelWithXHR();
+        loadModel(false);
       });
       
-      // Start loading process
-      loadModelWithXHR();
+      tryProxyBtn.addEventListener('click', function() {
+        loadModel(true);
+      });
+      
+      // Start loading the model
+      loadModel(false);
     });
   </script>
 </body>
-</html> 
+</html>
