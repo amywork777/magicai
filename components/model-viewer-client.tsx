@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useRef } from "react"
 import { Canvas, useThree, extend } from "@react-three/fiber"
-import { OrbitControls, useGLTF } from "@react-three/drei"
+import { OrbitControls, useGLTF, Html } from "@react-three/drei"
 import { Loader2, AlertCircle } from "lucide-react"
 import * as THREE from "three"
 
@@ -19,111 +19,129 @@ function Model({ url }: { url: string }) {
   const { camera } = useThree()
   const [loadError, setLoadError] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [cachedModelUrl, setCachedModelUrl] = useState<string | null>(null)
   
-  // Handle direct model loading with error fallback
+  // Cache the model on the server and get a local URL
   useEffect(() => {
-    if (!url) return
-    
-    const loadModelWithFallback = async () => {
+    async function cacheModel() {
+      if (!url) return
+      
       try {
-        // First try to load the model directly
         setIsLoading(true)
         setLoadError(false)
         
-        // Create a proxy URL by appending the original URL as a query parameter
-        // This allows us to load cross-origin models
+        console.log(`Requesting model caching for: ${url}`)
+        
+        // Encode the URL and send it to our proxy endpoint
         const encodedUrl = encodeURIComponent(url)
         const proxyUrl = `/api/proxy-model?url=${encodedUrl}`
         
-        // Use the DREI useGLTF hook to load the model
-        const { scene } = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
-          const xhr = new XMLHttpRequest()
-          xhr.open('GET', proxyUrl, true)
-          xhr.responseType = 'blob'
-          
-          xhr.onload = () => {
-            if (xhr.status === 200) {
-              const blob = xhr.response
-              const objectUrl = URL.createObjectURL(blob)
-              
-              // Use Three.js to load the model from the blob
-              const loader = new THREE.ObjectLoader()
-              loader.load(objectUrl, (obj) => {
-                resolve({ scene: obj as THREE.Group })
-                URL.revokeObjectURL(objectUrl)
-              })
-            } else {
-              reject(new Error(`Failed to load model: ${xhr.statusText}`))
-            }
-          }
-          
-          xhr.onerror = () => {
-            reject(new Error('Network error occurred loading the model'))
-          }
-          
-          xhr.send()
-        })
-        
-        // Set up the model
-        if (modelRef.current && scene) {
-          // Clear previous model
-          while (modelRef.current.children.length) {
-            modelRef.current.remove(modelRef.current.children[0])
-          }
-          
-          // Add the new model
-          modelRef.current.add(scene)
-          
-          // Set up camera to view model properly
-          const box = new THREE.Box3().setFromObject(scene)
-          const center = box.getCenter(new THREE.Vector3())
-          const size = box.getSize(new THREE.Vector3())
-          
-          const maxDim = Math.max(size.x, size.y, size.z)
-          const fov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180)
-          const cameraZ = Math.abs(maxDim / Math.sin(fov / 2))
-          
-          camera.position.set(center.x, center.y, center.z + cameraZ * 1.5)
-          camera.lookAt(center)
-          camera.updateProjectionMatrix()
+        const response = await fetch(proxyUrl)
+        if (!response.ok) {
+          throw new Error(`Failed to cache model: ${response.statusText}`)
         }
         
-        setIsLoading(false)
+        const data = await response.json()
+        if (!data.success || !data.modelPath) {
+          throw new Error('Invalid response from proxy endpoint')
+        }
+        
+        // Set the cached model URL (this will be a local path)
+        setCachedModelUrl(data.modelPath)
       } catch (error) {
-        console.error('Error loading model:', error)
+        console.error('Error caching model:', error)
         setLoadError(true)
-        setIsLoading(false)
       }
     }
     
-    loadModelWithFallback()
-  }, [url, camera])
+    cacheModel()
+  }, [url])
+  
+  // Load the model once we have a cached URL
+  const { scene } = useGLTF(cachedModelUrl || '', undefined, undefined, (error) => {
+    console.error('Error loading GLB:', error)
+    setLoadError(true)
+    setIsLoading(false)
+  })
+  
+  // Handle model setup once it's loaded
+  useEffect(() => {
+    if (!scene) return
+    
+    try {
+      // Apply white material
+      const whiteMaterial = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.3,
+        metalness: 0.1,
+      })
+      
+      scene.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh) {
+          child.material = whiteMaterial
+        }
+      })
+      
+      // Center camera on model
+      const box = new THREE.Box3().setFromObject(scene)
+      const center = box.getCenter(new THREE.Vector3())
+      const size = box.getSize(new THREE.Vector3())
+      
+      const maxDim = Math.max(size.x, size.y, size.z)
+      const fov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180)
+      const cameraZ = Math.abs(maxDim / Math.sin(fov / 2))
+      
+      camera.position.set(center.x, center.y, center.z + cameraZ * 1.5)
+      camera.lookAt(center)
+      camera.updateProjectionMatrix()
+      
+      // Add the model to our ref
+      if (modelRef.current) {
+        while (modelRef.current.children.length) {
+          modelRef.current.remove(modelRef.current.children[0])
+        }
+        modelRef.current.add(scene.clone())
+      }
+      
+      setIsLoading(false)
+    } catch (error) {
+      console.error('Error setting up model:', error)
+      setLoadError(true)
+      setIsLoading(false)
+    }
+  }, [scene, camera])
+  
+  // Create an empty group for the model
+  const group = new THREE.Group()
   
   return (
     <>
-      <group ref={modelRef} />
+      <primitive object={group} ref={modelRef} />
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-          <Loader2 className="h-8 w-8 animate-spin text-white" />
-        </div>
+        <Html fullscreen>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <Loader2 className="h-8 w-8 animate-spin text-white" />
+          </div>
+        </Html>
       )}
       {!loadError && !isLoading && (
-        <div style={{
-          position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          zIndex: 1000
-        }}>
-          <button
-            onClick={() => {
-              // Simple download - not yet STL
-              alert('Model download not implemented yet')
-            }}
-            className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors"
-          >
-            Download Model
-          </button>
-        </div>
+        <Html position={[0, -1, 0]}>
+          <div style={{
+            position: 'absolute',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 1000
+          }}>
+            <button
+              onClick={() => {
+                alert('Model download not implemented yet')
+              }}
+              className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Download Model
+            </button>
+          </div>
+        </Html>
       )}
     </>
   )
