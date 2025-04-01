@@ -6,133 +6,99 @@ import { OrbitControls, useGLTF } from "@react-three/drei"
 import { Loader2, AlertCircle } from "lucide-react"
 import * as THREE from "three"
 
-// Extend Three.js elements to R3F
-extend({
-  group: THREE.Group,
-  ambientLight: THREE.AmbientLight,
-  directionalLight: THREE.DirectionalLight,
-})
-
-// Add type declarations for Three.js JSX elements
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      group: any
-      ambientLight: any
-      directionalLight: any
-    }
-  }
-}
-
+// Basic interface for our component props
 interface ModelViewerProps {
   modelUrl: string | null
   status: "idle" | "uploading" | "generating" | "completed" | "error"
   progress: number
 }
 
+// Simple model component that will be used inside the Canvas
 function Model({ url }: { url: string }) {
-  const { scene } = useGLTF(url, undefined, true)
   const modelRef = useRef<THREE.Group>(null)
   const { camera } = useThree()
   const [loadError, setLoadError] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
-
-  // Handle GLB loading errors
+  
+  // Handle direct model loading with error fallback
   useEffect(() => {
-    if (!scene) {
-      setLoadError(true)
-      setIsLoading(false)
-    }
-  }, [scene])
-
-  // Add error handling for GLB loading
-  useEffect(() => {
-    const loadModel = async () => {
+    if (!url) return
+    
+    const loadModelWithFallback = async () => {
       try {
+        // First try to load the model directly
         setIsLoading(true)
         setLoadError(false)
         
-        // Try to fetch the model through our proxy endpoint
-        const response = await fetch('/api/proxy-model', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ modelUrl: url }),
-        })
-
-        if (!response.ok) {
-          throw new Error(`Failed to load model: ${response.statusText}`)
-        }
-
-        const blob = await response.blob()
-        const objectUrl = URL.createObjectURL(blob)
+        // Create a proxy URL by appending the original URL as a query parameter
+        // This allows us to load cross-origin models
+        const encodedUrl = encodeURIComponent(url)
+        const proxyUrl = `/api/proxy-model?url=${encodedUrl}`
         
-        // Update the model URL to use our proxied version
-        if (modelRef.current) {
-          modelRef.current.clear()
-          const gltf = await useGLTF(objectUrl)
-          modelRef.current.add(gltf.scene)
+        // Use the DREI useGLTF hook to load the model
+        const { scene } = await new Promise<{ scene: THREE.Group }>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('GET', proxyUrl, true)
+          xhr.responseType = 'blob'
+          
+          xhr.onload = () => {
+            if (xhr.status === 200) {
+              const blob = xhr.response
+              const objectUrl = URL.createObjectURL(blob)
+              
+              // Use Three.js to load the model from the blob
+              const loader = new THREE.ObjectLoader()
+              loader.load(objectUrl, (obj) => {
+                resolve({ scene: obj as THREE.Group })
+                URL.revokeObjectURL(objectUrl)
+              })
+            } else {
+              reject(new Error(`Failed to load model: ${xhr.statusText}`))
+            }
+          }
+          
+          xhr.onerror = () => {
+            reject(new Error('Network error occurred loading the model'))
+          }
+          
+          xhr.send()
+        })
+        
+        // Set up the model
+        if (modelRef.current && scene) {
+          // Clear previous model
+          while (modelRef.current.children.length) {
+            modelRef.current.remove(modelRef.current.children[0])
+          }
+          
+          // Add the new model
+          modelRef.current.add(scene)
+          
+          // Set up camera to view model properly
+          const box = new THREE.Box3().setFromObject(scene)
+          const center = box.getCenter(new THREE.Vector3())
+          const size = box.getSize(new THREE.Vector3())
+          
+          const maxDim = Math.max(size.x, size.y, size.z)
+          const fov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180)
+          const cameraZ = Math.abs(maxDim / Math.sin(fov / 2))
+          
+          camera.position.set(center.x, center.y, center.z + cameraZ * 1.5)
+          camera.lookAt(center)
+          camera.updateProjectionMatrix()
         }
-
-        URL.revokeObjectURL(objectUrl)
+        
+        setIsLoading(false)
       } catch (error) {
         console.error('Error loading model:', error)
         setLoadError(true)
-      } finally {
         setIsLoading(false)
       }
     }
-
-    if (url) {
-      loadModel()
-    }
-  }, [url])
-
-  // Apply white material to all meshes
-  useEffect(() => {
-    if (!scene) return
-
-    try {
-      const whiteMaterial = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        roughness: 0.3,
-        metalness: 0.1,
-      })
-
-      scene.traverse((child: THREE.Object3D) => {
-        if (child instanceof THREE.Mesh) {
-          // Apply white material
-          child.material = whiteMaterial
-        }
-      })
-
-      // Center camera on model
-      const box = new THREE.Box3().setFromObject(scene)
-      const center = box.getCenter(new THREE.Vector3())
-      const size = box.getSize(new THREE.Vector3())
-
-      // Adjust camera position based on model size
-      const maxDim = Math.max(size.x, size.y, size.z)
-      const fov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180)
-      const cameraZ = Math.abs(maxDim / Math.sin(fov / 2))
-
-      // Set camera position
-      camera.position.set(center.x, center.y, center.z + cameraZ * 1.5)
-      camera.lookAt(center)
-      camera.updateProjectionMatrix()
-
-      // Add the model to our ref
-      if (modelRef.current) {
-        modelRef.current.clear()
-        modelRef.current.add(scene.clone())
-      }
-    } catch (error) {
-      console.error('Error setting up model:', error)
-      setLoadError(true)
-    }
-  }, [scene, camera])
-
+    
+    loadModelWithFallback()
+  }, [url, camera])
+  
   return (
     <>
       <group ref={modelRef} />
@@ -150,12 +116,12 @@ function Model({ url }: { url: string }) {
         }}>
           <button
             onClick={() => {
-              // TODO: Implement STL download
-              console.log('STL download not implemented yet')
+              // Simple download - not yet STL
+              alert('Model download not implemented yet')
             }}
             className="bg-primary text-white px-4 py-2 rounded-md hover:bg-primary/90 transition-colors"
           >
-            Download STL
+            Download Model
           </button>
         </div>
       )}
@@ -163,35 +129,23 @@ function Model({ url }: { url: string }) {
   )
 }
 
-// Custom scene setup component
-function SceneSetup() {
-  const { scene } = useThree()
-
-  useEffect(() => {
-    // Set background color
-    scene.background = new THREE.Color(0xf5f5f5)
-  }, [scene])
-
-  return null
-}
-
+// Main ModelViewer component
 const ModelViewer = ({ modelUrl, status, progress }: ModelViewerProps) => {
   const [loadError, setLoadError] = useState(false)
-
+  
   // Reset error state when model URL changes
   useEffect(() => {
     if (modelUrl) {
       setLoadError(false)
     }
   }, [modelUrl])
-
+  
   return (
     <div className="w-full h-[450px] bg-gray-100 rounded-lg overflow-hidden border">
       {status === "completed" && modelUrl && !loadError ? (
         <div className="w-full h-full">
           <ErrorBoundary fallback={<div className="w-full h-full flex items-center justify-center text-destructive">Error loading 3D model</div>}>
             <Canvas shadows camera={{ position: [0, 0, 5], fov: 50 }}>
-              <SceneSetup />
               <ambientLight intensity={0.8} />
               <directionalLight position={[5, 10, 5]} intensity={1} castShadow />
               <directionalLight position={[-5, 10, 5]} intensity={0.8} />
