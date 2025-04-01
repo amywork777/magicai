@@ -242,6 +242,41 @@
         </div>
       </div>
       
+      <!-- Super Simple Viewer -->
+      <div class="viewer-card">
+        <div class="viewer-header" style="background-color: #3b82f6;">
+          <h3>⚡ Super Simple Viewer</h3>
+        </div>
+        <div class="viewer-body">
+          <p>Simplified approach with XHR download and multiple fallback methods. Clean UI with easy switch between methods.</p>
+          <div class="tags">
+            <span class="tag client">Client-only</span>
+            <span class="tag cors">CORS Bypass</span>
+            <span class="tag download">Download</span>
+          </div>
+        </div>
+        <div class="viewer-footer">
+          <a href="#" class="viewer-btn" style="background-color: #3b82f6;" id="open-super-simple">Open Super Simple</a>
+        </div>
+      </div>
+      
+      <!-- Absolute Minimum -->
+      <div class="viewer-card">
+        <div class="viewer-header" style="background-color: #10b981;">
+          <h3>🔍 Absolute Minimum</h3>
+        </div>
+        <div class="viewer-body">
+          <p>Just the raw essentials - direct model loading with no extras. Smallest possible viewer with minimal code.</p>
+          <div class="tags">
+            <span class="tag client">Client-only</span>
+            <span class="tag">Minimal</span>
+          </div>
+        </div>
+        <div class="viewer-footer">
+          <a href="#" class="viewer-btn" style="background-color: #10b981;" id="open-absolute-minimum">Open Minimal</a>
+        </div>
+      </div>
+      
       <!-- Direct Fetch -->
       <div class="viewer-card">
         <div class="viewer-header">
@@ -343,6 +378,8 @@
       const openStandaloneBtn = document.getElementById('open-standalone');
       const openProxyBtn = document.getElementById('open-proxy');
       const openDirectModelBtn = document.getElementById('open-direct-model');
+      const openSuperSimpleBtn = document.getElementById('open-super-simple');
+      const openAbsoluteMinimumBtn = document.getElementById('open-absolute-minimum');
       
       // Function to get the current model URL
       function getModelUrl() {
@@ -353,6 +390,18 @@
       openEmergencyBtn.addEventListener('click', function(e) {
         e.preventDefault();
         window.open(`/emergency-viewer.html?url=${getModelUrl()}`, '_blank');
+      });
+      
+      // Open super simple viewer
+      openSuperSimpleBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        window.open(`/super-simple-viewer.html?url=${getModelUrl()}`, '_blank');
+      });
+      
+      // Open absolute minimum viewer
+      openAbsoluteMinimumBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        window.open(`/absolute-minimum.html?url=${getModelUrl()}`, '_blank');
       });
       
       // Open direct fetch
@@ -385,9 +434,11 @@
         
         // Open each viewer in a new tab
         window.open(`/emergency-viewer.html?url=${modelUrl}`, '_blank');
-        setTimeout(() => window.open(`/direct-fetch.html?url=${modelUrl}`, '_blank'), 300);
-        setTimeout(() => window.open(`/tripo-standalone.html?url=${modelUrl}`, '_blank'), 600);
-        setTimeout(() => window.open(`/api/model-proxy?url=${modelUrl}`, '_blank'), 900);
+        setTimeout(() => window.open(`/super-simple-viewer.html?url=${modelUrl}`, '_blank'), 200);
+        setTimeout(() => window.open(`/absolute-minimum.html?url=${modelUrl}`, '_blank'), 400);
+        setTimeout(() => window.open(`/direct-fetch.html?url=${modelUrl}`, '_blank'), 600);
+        setTimeout(() => window.open(`/tripo-standalone.html?url=${modelUrl}`, '_blank'), 800);
+        setTimeout(() => window.open(`/api/model-proxy?url=${modelUrl}`, '_blank'), 1000);
         setTimeout(() => window.open(`/direct-model?url=${modelUrl}`, '_blank'), 1200);
       });
     });
