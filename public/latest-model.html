@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cross-Origin-Opener-Policy" content="same-origin-allow-popups">
   <meta http-equiv="Cross-Origin-Embedder-Policy" content="credentialless">
-  <!-- Vercel specific config for file system access -->
-  <meta name="vercel-deployment-url" content="${VERCEL_URL}">
-  <title>Current Tripo Model Viewer</title>
+  <title>Latest Model Viewer</title>
   <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js" crossorigin="anonymous"></script>
   <style>
     body, html {
@@ -54,6 +52,9 @@
       text-align: center;
       padding: 2rem;
     }
+    .hidden {
+      display: none;
+    }
     .spinner {
       width: 40px;
       height: 40px;
@@ -91,7 +92,7 @@
       font-size: 14px;
       z-index: 99;
     }
-    .direct-btn {
+    .try-browser {
       position: fixed;
       bottom: 20px;
       right: 20px;
@@ -103,14 +104,13 @@
   <div id="loading" class="loading">
     <div class="spinner"></div>
     <div>Loading your 3D model...</div>
-    <div id="status" style="margin-top: 10px; font-size: 14px;">Preparing to download...</div>
   </div>
   
-  <div id="error" class="error" style="display: none;">
+  <div id="error" class="error hidden">
     <h2>Error Loading Model</h2>
     <p id="error-message">Failed to load the 3D model.</p>
     <button id="tryAgainBtn" class="btn">Try Again</button>
-    <button id="viewDirectlyBtn" class="btn" style="margin-left: 10px;">Try Direct Link</button>
+    <button id="alternativeBtn" class="btn" style="margin-left: 10px;">Try Browser Viewer</button>
   </div>
   
   <model-viewer 
@@ -121,83 +121,84 @@
     shadow-softness="0.5"
     exposure="0.8"
     environment-image="neutral"
-    style="display: none;"
+    crossorigin="anonymous"
+    loading="eager"
+    reveal="auto"
   ></model-viewer>
 
   <div class="info">Use mouse to rotate, scroll to zoom</div>
-  <a href="/direct-model?url=https%3A%2F%2Ftripo-data.rg1.data.tripo3d.com%2Ftcli_9270104da6f34a46a2479869119b834d%2F20250401%2Fb8cc5869-4250-4dc0-bae7-ed978645596c%2Ftripo_base_model_b8cc5869-4250-4dc0-bae7-ed978645596c.glb%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly90cmlwby1kYXRhLnJnMS5kYXRhLnRyaXBvM2QuY29tL3RjbGlfOTI3MDEwNGRhNmYzNGE0NmEyNDc5ODY5MTE5YjgzNGQvMjAyNTA0MDEvYjhjYzU4NjktNDI1MC00ZGMwLWJhZTctZWQ5Nzg2NDU1OTZjL3RyaXBvX2Jhc2VfbW9kZWxfYjhjYzU4NjktNDI1MC00ZGMwLWJhZTctZWQ5Nzg2NDU1OTZjLmdsYiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc0MzU1MjAwMH19fV19%26Signature%3DikZFc~czi70l5c6vrEy0gXBcnWyJJ4m4kd4AwwFDk2itx1N7efZKqlzIH6R0jXebBYu5BtvLDWo8hjLE9N6CIhTpDhFZ4QytKkeuLskOV7o70JpzI56NGjnL-JQDixTv8GqeCIm5Nv220UGVjhcuZiy5rXzSUDBDs7OKbDkf3eu62eE8MyLVOR5pCS9liH-MkkbpDbz5fjNQuEPGhMtqliTRpUsR4MRCZZKiHQB1WHzX1G-uDMzp3eLfz6v1OOeU6qQOifp61p3-PkPtaF50H8pLOUwTesQTMNLMAg3hmDrNQix6VxOkXQkJvHvdjmZ1v~h55P9JDGNOI9j9ax7U-w__%26Key-Pair-Id%3DK1676C64NMVM2J" class="btn direct-btn" target="_blank">Use Direct Link</a>
+  <a href="/tripo-browser.html?url=https%3A%2F%2Ftripo-data.rg1.data.tripo3d.com%2Ftcli_9270104da6f34a46a2479869119b834d%2F20250401%2Fb8cc5869-4250-4dc0-bae7-ed978645596c%2Ftripo_base_model_b8cc5869-4250-4dc0-bae7-ed978645596c.glb%3FPolicy%3DeyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly90cmlwby1kYXRhLnJnMS5kYXRhLnRyaXBvM2QuY29tL3RjbGlfOTI3MDEwNGRhNmYzNGE0NmEyNDc5ODY5MTE5YjgzNGQvMjAyNTA0MDEvYjhjYzU4NjktNDI1MC00ZGMwLWJhZTctZWQ5Nzg2NDU1OTZjL3RyaXBvX2Jhc2VfbW9kZWxfYjhjYzU4NjktNDI1MC00ZGMwLWJhZTctZWQ5Nzg2NDU1OTZjLmdsYiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc0MzU1MjAwMH19fV19%26Signature%3DikZFc~czi70l5c6vrEy0gXBcnWyJJ4m4kd4AwwFDk2itx1N7efZKqlzIH6R0jXebBYu5BtvLDWo8hjLE9N6CIhTpDhFZ4QytKkeuLskOV7o70JpzI56NGjnL-JQDixTv8GqeCIm5Nv220UGVjhcuZiy5rXzSUDBDs7OKbDkf3eu62eE8MyLVOR5pCS9liH-MkkbpDbz5fjNQuEPGhMtqliTRpUsR4MRCZZKiHQB1WHzX1G-uDMzp3eLfz6v1OOeU6qQOifp61p3-PkPtaF50H8pLOUwTesQTMNLMAg3hmDrNQix6VxOkXQkJvHvdjmZ1v~h55P9JDGNOI9j9ax7U-w__%26Key-Pair-Id%3DK1676C64NMVM2J" class="btn try-browser" target="_blank">Try Browser Viewer</a>
 
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       const viewer = document.getElementById('viewer');
       const loading = document.getElementById('loading');
       const error = document.getElementById('error');
-      const status = document.getElementById('status');
       const errorMessage = document.getElementById('error-message');
       const tryAgainBtn = document.getElementById('tryAgainBtn');
-      const viewDirectlyBtn = document.getElementById('viewDirectlyBtn');
+      const alternativeBtn = document.getElementById('alternativeBtn');
       
-      // The current problematic Tripo URL
+      // Hardcoded model URL - the one you specifically need to view
       const modelUrl = 'https://tripo-data.rg1.data.tripo3d.com/tcli_9270104da6f34a46a2479869119b834d/20250401/b8cc5869-4250-4dc0-bae7-ed978645596c/tripo_base_model_b8cc5869-4250-4dc0-bae7-ed978645596c.glb?Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly90cmlwby1kYXRhLnJnMS5kYXRhLnRyaXBvM2QuY29tL3RjbGlfOTI3MDEwNGRhNmYzNGE0NmEyNDc5ODY5MTE5YjgzNGQvMjAyNTA0MDEvYjhjYzU4NjktNDI1MC00ZGMwLWJhZTctZWQ5Nzg2NDU1OTZjL3RyaXBvX2Jhc2VfbW9kZWxfYjhjYzU4NjktNDI1MC00ZGMwLWJhZTctZWQ5Nzg2NDU1OTZjLmdsYiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc0MzU1MjAwMH19fV19&Signature=ikZFc~czi70l5c6vrEy0gXBcnWyJJ4m4kd4AwwFDk2itx1N7efZKqlzIH6R0jXebBYu5BtvLDWo8hjLE9N6CIhTpDhFZ4QytKkeuLskOV7o70JpzI56NGjnL-JQDixTv8GqeCIm5Nv220UGVjhcuZiy5rXzSUDBDs7OKbDkf3eu62eE8MyLVOR5pCS9liH-MkkbpDbz5fjNQuEPGhMtqliTRpUsR4MRCZZKiHQB1WHzX1G-uDMzp3eLfz6v1OOeU6qQOifp61p3-PkPtaF50H8pLOUwTesQTMNLMAg3hmDrNQix6VxOkXQkJvHvdjmZ1v~h55P9JDGNOI9j9ax7U-w__&Key-Pair-Id=K1676C64NMVM2J';
-      
-      // Function to load via proxy
-      function loadViaProxy() {
-        status.textContent = 'Downloading model via server proxy...';
-        
-        // First fetch to ensure the model is downloaded to the server
-        fetch(`/api/download-tripo?url=${encodeURIComponent(modelUrl)}`)
-          .then(response => {
-            if (!response.ok) {
-              throw new Error(`Server error: ${response.status} ${response.statusText}`);
-            }
-            return response.blob();
-          })
-          .then(blob => {
-            status.textContent = 'Model downloaded, preparing viewer...';
-            
-            // Create a local URL from the downloaded model
-            const localUrl = URL.createObjectURL(blob);
-            
-            // Now load the model into the viewer
-            viewer.setAttribute('src', localUrl);
-            viewer.style.display = 'block';
-            
-            viewer.addEventListener('load', function() {
-              loading.style.display = 'none';
-            });
-            
-            viewer.addEventListener('error', function(e) {
-              console.error('Model viewer error:', e);
-              showError('Error in model-viewer component. Try the direct link option.');
-            });
-          })
-          .catch(err => {
-            console.error('Error downloading model:', err);
-            showError(err.message || 'Failed to download model from server');
-          });
-      }
       
       // Function to show error
       function showError(message) {
-        loading.style.display = 'none';
-        error.style.display = 'flex';
+        loading.classList.add('hidden');
+        error.classList.remove('hidden');
         errorMessage.textContent = message;
       }
       
+      // Function to load the model
+      function loadModel() {
+        loading.classList.remove('hidden');
+        error.classList.add('hidden');
+        
+        try {
+          // Set the source
+          viewer.setAttribute('src', modelUrl);
+          
+          // Listen for load event
+          viewer.addEventListener('load', function onLoad() {
+            loading.classList.add('hidden');
+            viewer.removeEventListener('load', onLoad);
+          });
+          
+          // Listen for error
+          viewer.addEventListener('error', function onError(err) {
+            console.error('Error loading model:', err);
+            showError('Failed to load model. Try the browser viewer option for a different approach.');
+            viewer.removeEventListener('error', onError);
+          });
+          
+        } catch (err) {
+          console.error('Error setting model URL:', err);
+          showError(err.message || 'Failed to set model URL');
+        }
+      }
+      
       // Try again button
-      tryAgainBtn.addEventListener('click', function() {
-        error.style.display = 'none';
-        loading.style.display = 'flex';
-        loadViaProxy();
+      tryAgainBtn.addEventListener('click', loadModel);
+      
+      // Alternative viewer button
+      alternativeBtn.addEventListener('click', function() {
+        window.location.href = `/tripo-browser.html?url=${encodeURIComponent(modelUrl)}`;
       });
       
-      // View directly button
-      viewDirectlyBtn.addEventListener('click', function() {
-        window.open(`/direct-model?url=${encodeURIComponent(modelUrl)}`, '_blank');
-      });
+      // Add CORS headers to fetch requests
+      const originalFetch = window.fetch;
+      window.fetch = function() {
+        const args = Array.from(arguments);
+        if (args[1] && args[1].mode !== 'navigate') {
+          args[1] = args[1] || {};
+          args[1].headers = args[1].headers || {};
+          args[1].credentials = 'include';
+          args[1].mode = 'cors';
+        }
+        return originalFetch.apply(this, args);
+      };
       
-      // Start loading
-      loadViaProxy();
+      // Load the model when the page loads
+      loadModel();
     });
   </script>
 </body>

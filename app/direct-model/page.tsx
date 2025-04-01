@@ -1,9 +1,10 @@
 "use client"
 
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 
-export default function DirectModelViewer() {
+// Main component that uses searchParams, wrapped in suspense
+function ModelViewerContent() {
   const searchParams = useSearchParams()
   const modelUrlParam = searchParams.get('url')
   const [loading, setLoading] = useState(true)
@@ -66,5 +67,26 @@ export default function DirectModelViewer() {
         allow="autoplay; camera; microphone; xr-spatial-tracking"
       />
     </div>
+  )
+}
+
+// Loader component for suspense fallback
+function ModelLoading() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-black text-white">
+      <div className="text-center">
+        <div className="inline-block animate-spin h-8 w-8 border-4 border-t-blue-500 border-r-transparent border-b-blue-500 border-l-transparent rounded-full mb-4"></div>
+        <div>Initializing viewer...</div>
+      </div>
+    </div>
+  )
+}
+
+// Main component with suspense boundary
+export default function DirectModelViewer() {
+  return (
+    <Suspense fallback={<ModelLoading />}>
+      <ModelViewerContent />
+    </Suspense>
   )
 } 

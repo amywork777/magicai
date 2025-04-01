@@ -11,6 +11,9 @@ if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
 
+// Add export config to make the route dynamic
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     // URL for the specific Tripo model that's causing problems
