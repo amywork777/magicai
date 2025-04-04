@@ -578,10 +578,8 @@ export function ModelGenerator() {
           description: "Using AI to analyze your image...",
         })
 
-        console.log("🔍 Sending image for analysis to /api/analyze-image...");
-        
         // Log hostname for debugging
-        console.log("📍 Current hostname:", window.location.hostname);
+        // console.log("📍 Current hostname:", window.location.hostname);
         
         const analysisResponse = await fetch("/api/analyze-image", {
           method: "POST",
@@ -591,11 +589,11 @@ export function ModelGenerator() {
           throw error; // Re-throw to be caught by the outer catch
         });
 
-        console.log("📥 Received response from /api/analyze-image:", {
-          status: analysisResponse.status,
-          statusText: analysisResponse.statusText,
-          headers: Object.fromEntries([...analysisResponse.headers])
-        });
+        // console.log("📥 Received response from /api/analyze-image:", {
+        //   status: analysisResponse.status,
+        //   statusText: analysisResponse.statusText,
+        //   headers: Object.fromEntries([...analysisResponse.headers])
+        // });
 
         // Always try to read the response body regardless of status code
         const analysisData = await analysisResponse.json().catch(error => {
@@ -603,12 +601,12 @@ export function ModelGenerator() {
           return {}; // Return empty object to avoid further errors
         });
 
-        console.log("📄 Analysis response data:", analysisData);
+        // console.log("📄 Analysis response data:", analysisData);
 
         // Use the description from the response if available, even if it's an error response
         if (analysisData.description) {
           description = analysisData.description;
-          console.log(`✅ [CLIENT] Using description from API: "${description}"`);
+          // console.log(`✅ [CLIENT] Using description from API: "${description}"`);
           
           toast({
             title: analysisResponse.ok ? "Image Analyzed" : "Using Fallback Description",
@@ -616,7 +614,7 @@ export function ModelGenerator() {
           });
         } else if (analysisResponse.ok && analysisData.description === "") {
           // Handle empty description from a successful response
-          console.warn("Image analysis returned empty description, falling back to direct prompt");
+          // console.warn("Image analysis returned empty description, falling back to direct prompt");
           description = imageTextPrompt || 
             `Create a 3D model based on the uploaded image. ${
               selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
@@ -628,7 +626,7 @@ export function ModelGenerator() {
           });
         } else {
           // Handle unsuccessful response without description
-          console.warn("Image analysis failed, falling back to direct prompt");
+          // console.warn("Image analysis failed, falling back to direct prompt");
           description = imageTextPrompt || 
             `Create a 3D model based on the uploaded image. ${
               selectedImageTextFile.name ? `The image filename is: ${selectedImageTextFile.name}.` : ''
@@ -640,7 +638,7 @@ export function ModelGenerator() {
           });
         }
       } catch (error) {
-        console.warn("Error during image analysis:", error);
+        // console.warn("Error during image analysis:", error);
         // Fallback to direct text description if analysis fails
         description = imageTextPrompt || 
           `Create a 3D model based on the uploaded image. ${
@@ -684,7 +682,7 @@ export function ModelGenerator() {
       // Only fall back to image-to-model if explicitly specified
       const generationType = "text"; // Always use text-to-model for better results
       
-      console.log("🔄 Using text-to-model with OpenAI description:", description);
+      // console.log("🔄 Using text-to-model with OpenAI description:", description);
       
       const generationPayload: {
         type: string;
@@ -711,7 +709,7 @@ export function ModelGenerator() {
 
       if (!generationResponse.ok) {
         const errorData = await generationResponse.json();
-        console.error("Generation API error:", errorData);
+        // console.error("Generation API error:", errorData);
         throw new Error("Failed to start model generation: " + (errorData.error || "Unknown error"));
       }
 
@@ -726,7 +724,7 @@ export function ModelGenerator() {
       // Start polling for task status
       pollTaskStatus(generationData.taskId);
     } catch (error) {
-      console.error("Error processing image and text:", error);
+      // console.error("Error processing image and text:", error);
       setStatus("error");
       setIsGenerating(false);
       setIsAnalyzingImage(false);
@@ -759,7 +757,7 @@ export function ModelGenerator() {
       
       return blob
     } catch (error) {
-      console.error("Error converting to STL:", error)
+      // console.error("Error converting to STL:", error)
       toast({
         title: "Error",
         description: "Failed to convert model to STL format. You can still try downloading.",
@@ -773,17 +771,17 @@ export function ModelGenerator() {
 
   const pollTaskStatus = async (taskId: string, retryCount = 0, maxRetries = 3) => {
     try {
-      console.log(`🔍 Polling task status for taskId: ${taskId} (attempt: ${retryCount + 1}/${maxRetries + 1})`);
+      // console.log(`🔍 Polling task status for taskId: ${taskId} (attempt: ${retryCount + 1}/${maxRetries + 1})`);
       
       // Get the current origin for constructing absolute URLs
       const origin = typeof window !== 'undefined' ? window.location.origin : '';
       const apiUrl = `${origin}/api/task-status?taskId=${taskId}`;
       
-      console.log(`🔍 Using API URL: ${apiUrl}`);
+      // console.log(`🔍 Using API URL: ${apiUrl}`);
       
       // Try POST method first on retry attempts since GET might be having CORS issues
       const method = retryCount > 0 ? 'POST' : 'GET';
-      console.log(`🔍 Using HTTP method: ${method}`);
+      // console.log(`🔍 Using HTTP method: ${method}`);
       
       const response = await fetch(apiUrl, {
         method: method,
@@ -799,31 +797,31 @@ export function ModelGenerator() {
         }),
         credentials: 'same-origin'
       }).catch(err => {
-        console.error(`❌ Network error fetching task status:`, err);
+        // console.error(`❌ Network error fetching task status:`, err);
         throw err;
       });
 
-      console.log(`📥 Task status response:`, {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      });
+      // console.log(`📥 Task status response:`, {
+      //   status: response.status,
+      //   statusText: response.statusText,
+      //   ok: response.ok
+      // });
 
       if (!response.ok) {
         // For 405 Method Not Allowed specifically (CORS or server config issue)
         if (response.status === 405) {
-          console.warn(`⚠️ API returned 405 Method Not Allowed - trying alternative approach`);
+          // console.warn(`⚠️ API returned 405 Method Not Allowed - trying alternative approach`);
           
           // If GET failed with 405, try POST immediately
           if (method === 'GET') {
-            console.log(`🔄 Switching from GET to POST method immediately`);
+            // console.log(`🔄 Switching from GET to POST method immediately`);
             // Call ourselves but with retryCount+0.5 to indicate we're doing an immediate method switch
             setTimeout(() => pollTaskStatus(taskId, retryCount + 0.5, maxRetries), 100);
             return;
           }
           
           if (retryCount < maxRetries) {
-            console.log(`🔄 Retrying in 3 seconds... (${retryCount + 1}/${maxRetries})`);
+            // console.log(`🔄 Retrying in 3 seconds... (${retryCount + 1}/${maxRetries})`);
             setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 3000);
             return;
           }
@@ -832,20 +830,20 @@ export function ModelGenerator() {
       }
 
       const data = await response.json().catch(err => {
-        console.error(`❌ Error parsing JSON response:`, err);
+        // console.error(`❌ Error parsing JSON response:`, err);
         throw new Error("Failed to parse task status response");
       });
 
-      console.log(`📄 Task status data:`, data);
+      // console.log(`📄 Task status data:`, data);
 
       // Even if we get an error response, if it has status and progress we can still use it
       if (data.error || data.message) {
         const errorMsg = data.error || data.message;
-        console.warn(`⚠️ API returned error/message with 200 status:`, errorMsg);
+        // console.warn(`⚠️ API returned error/message with 200 status:`, errorMsg);
         
         // If the server returned a status and progress, we can use those to update the UI
         if (data.status === 'running' && typeof data.progress === 'number') {
-          console.log(`⚠️ Using fallback progress data from API error response:`, data.progress);
+          // console.log(`⚠️ Using fallback progress data from API error response:`, data.progress);
           setProgress(data.progress);
           
           // For API key issues, show a toast only on the first retry
@@ -875,16 +873,12 @@ export function ModelGenerator() {
         let finalModelUrl: string | null = null;
         
         if (data.modelUrl) {
-          console.log("Setting model URL from API response:", data.modelUrl);
+          // Just set the URL without logging it
           finalModelUrl = data.modelUrl;
         } else {
-          console.warn("Task completed but no model URL received in response");
-          // Attempt fallback if base model URL is available but not set as modelUrl
           if (data.baseModelUrl) {
-            console.log("Using fallback baseModelUrl:", data.baseModelUrl);
             finalModelUrl = data.baseModelUrl;
           } else {
-            console.error("No model URL available in API response");
             toast({
               title: "Warning",
               description: "Model generated but the viewer URL may not be available.",
@@ -899,7 +893,6 @@ export function ModelGenerator() {
         
         // Automatically start STL conversion when model is ready
         if (finalModelUrl) {
-          // Show toast notification for STL conversion
           toast({
             title: "Processing STL",
             description: "Converting your 3D model to STL format...",
@@ -915,8 +908,7 @@ export function ModelGenerator() {
                 });
               }
             })
-            .catch(error => {
-              console.error("Error in automatic STL conversion:", error);
+            .catch(() => {
               // Error is already handled in convertToStl
             });
         }
@@ -943,7 +935,8 @@ export function ModelGenerator() {
             modelInfo
           }, '*');
           
-          console.log("Sent model generation notification to parent:", modelInfo);
+          // Replace detailed log with generic message
+          console.log("Model generation completed and notified parent window");
         }
       } else if (data.status === "failed" || data.status === "cancelled" || data.status === "unknown") {
         setStatus("error")
@@ -962,7 +955,7 @@ export function ModelGenerator() {
         if (retryCount >= maxRetries && data.progress) {
           // Ensure progress keeps moving slightly but never reaches 100%
           const simulatedProgress = Math.min(98, data.progress + 3 + Math.floor(Math.random() * 5));
-          console.log(`⚠️ Using simulated progress after max retries:`, simulatedProgress);
+          // console.log(`⚠️ Using simulated progress after max retries:`, simulatedProgress);
           setProgress(simulatedProgress);
           
           // Every 10 seconds, we should check if the real API is back
@@ -974,11 +967,11 @@ export function ModelGenerator() {
         setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 3000)
       }
     } catch (error) {
-      console.error("Error polling task status:", error);
+      // console.error("Error polling task status:", error);
       
       // Show a fake success after max retries for better UX (will at least show the model generation is in progress)
       if (retryCount >= maxRetries) {
-        console.log("Maximum retries reached. Showing placeholder progress UI.");
+        // console.log("Maximum retries reached. Showing placeholder progress UI.");
         // Simulate progress without actual data
         setStatus("generating");
         const fakeProgress = 25 + (retryCount * 10); // Gradually increase fake progress
@@ -991,7 +984,7 @@ export function ModelGenerator() {
       
       // Implement retry logic for errors
       if (retryCount < maxRetries) {
-        console.log(`🔄 Error occurred, retrying in 3 seconds... (${retryCount + 1}/${maxRetries})`);
+        // console.log(`🔄 Error occurred, retrying in 3 seconds... (${retryCount + 1}/${maxRetries})`);
         setTimeout(() => pollTaskStatus(taskId, retryCount + 1, maxRetries), 3000);
         return;
       }

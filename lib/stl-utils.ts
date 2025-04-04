@@ -65,8 +65,6 @@ export async function convertGlbToStl(glbUrl: string): Promise<Blob> {
       // Create a scene to load the GLB into
       const scene = new THREE.Scene()
       
-      console.log('STL Converter: Loading GLB model from:', glbUrl)
-      
       // Load the GLB model with our custom loader that handles proxying
       const modelScene = await loadGLBWithProxy(glbUrl)
       

@@ -262,7 +262,7 @@ const ThreeViewerComponent = (props) => {
             (error) => {
               if (!isComponentMounted || unmountingRef.current) return;
               
-              console.error("Error loading GLB model:", error, "URL:", modelUrl);
+              console.error("Error loading GLB model:", error);
               setHasError(true);
               setIsLoading(false);
             }
